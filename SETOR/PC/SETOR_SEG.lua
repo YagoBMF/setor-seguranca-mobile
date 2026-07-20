@@ -4910,14 +4910,25 @@ function finalizarTudo(statusTexto)
     --     wait(1100)
     --     requests.post(WEBHOOKS.FORM_ATENDIMENTO, {data = '{"content":"'..corpoForm..'"}', headers = {["Content-Type"] = "application/json"}})
     -- end)
+    -- Encerra tambem qualquer estado visual residual do painel.
     emAtendimento = false
+    jogadorCaiu = false
+    tempoExibicaoAviso = 0
+    painelAtendimentoArrastando = false
 end
 
 -- ============================================================
 -- EVENTOS DE SAÍDA E VISUAL (SETOR SEGURANÇA)
 -- ============================================================
 local function setor_onPlayerQuit(id, reason)
-    if emAtendimento and tostring(id) == idJogadorAtendido then
+    local nickQueSaiu = ""
+    if type(sampGetPlayerNickname) == "function" then
+        local okNick, nickSaida = pcall(sampGetPlayerNickname, id)
+        if okNick then nickQueSaiu = tostring(nickSaida or "") end
+    end
+    local saiuJogadorAtendido = tostring(id) == idJogadorAtendido
+        or (nickQueSaiu ~= "" and nickQueSaiu:lower() == tostring(nickJogadorAtendido):lower())
+    if emAtendimento and saiuJogadorAtendido then
         local dur = os.difftime(os.time(), tempoInicio)
         tempoFinalCongelado = string.format("%02d:%02d", math.floor(dur / 60), dur % 60)
         table.insert(historicoConversa, "[" .. os.date("%H:%M:%S") .. "] O jogador saiu do servidor.")
@@ -5026,7 +5037,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.0",
+    versao = "1.1",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
