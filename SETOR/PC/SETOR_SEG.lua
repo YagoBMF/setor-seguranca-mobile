@@ -3455,8 +3455,68 @@ function _G.HZDefinirModulo(id, ativo)
     return true
 end
 
+-- Painel seguro para MoonLoader 0.26.x. Usa apenas componentes basicos do ImGui,
+-- evitando chamadas de desenho que podem fechar o GTA sem gerar traceback.
+function _G.HZDesenharPainelModsCompat()
+    if not _G.HZModsJanela.v then return end
+    local pushedColors, pushedVars = uiApplyWindowTheme()
+    imgui.SetNextWindowSize(imgui.ImVec2(540, 500), imgui.Cond.Always)
+    if not _G.HZModsPosCarregada then
+        imgui.SetNextWindowPos(imgui.ImVec2(
+            tonumber(configSistema.modsX) or 360,
+            tonumber(configSistema.modsY) or 180
+        ), imgui.Cond.Always)
+        _G.HZModsPosCarregada = true
+    end
+    local flags = 0
+    if imgui.WindowFlags then
+        if imgui.WindowFlags.NoResize then flags = flags + imgui.WindowFlags.NoResize end
+        if imgui.WindowFlags.NoCollapse then flags = flags + imgui.WindowFlags.NoCollapse end
+    end
+    imgui.Begin("SETOR ADVANCED - MODULOS (COMPATIVEL)", _G.HZModsJanela, flags)
+    local pos = imgui.GetWindowPos()
+    if pos then
+        configSistema.modsX = math.floor(pos.x)
+        configSistema.modsY = math.floor(pos.y)
+        salvarConfigSistema(false)
+    end
+
+    local okId, meuId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    local meuNome = okId and tostring(sampGetPlayerNickname(meuId) or "Staff") or "Staff"
+    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+    imgui.TextColored(UI_HZ.glow, "SETOR ADVANCED  |  /MODS")
+    imgui.TextColored(UI_HZ.text, meuNome .. "  -  " .. cargoNome)
+    imgui.TextColored(UI_HZ.muted, "Modo compativel com MoonLoader 0.26.x")
+    imgui.Separator()
+    imgui.BeginChild("##mods_compat_lista", imgui.ImVec2(0, 385), true)
+    for i, item in ipairs(_G.HZModulosUI) do
+        local id, titulo, descricao = item[1], item[2], item[3]
+        local valor = imgui.ImBool(_G.HZModuloAtivo(id))
+        if imgui.Checkbox(titulo .. "##compat_" .. id, valor) then
+            _G.HZDefinirModulo(id, valor.v)
+        end
+        imgui.SameLine()
+        local permitido = _G.HZTemPermissaoModulo(id)
+        local estado = permitido and (_G.HZModuloAtivo(id) and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
+        imgui.TextColored(_G.HZModuloAtivo(id) and UI_HZ.green or UI_HZ.muted, estado)
+        imgui.TextColored(UI_HZ.muted, descricao)
+        if i < #_G.HZModulosUI then imgui.Separator() end
+    end
+    imgui.EndChild()
+    if imgui.Button("FECHAR", imgui.ImVec2(150, 32)) then
+        _G.HZFecharPainelMods()
+    end
+    imgui.End()
+    uiEndWindowTheme(pushedColors, pushedVars)
+    if not _G.HZModsJanela.v then _G.HZFecharPainelMods() end
+end
+
 function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
+    local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
+    if versaoMoonLoader <= 26 then
+        return _G.HZDesenharPainelModsCompat()
+    end
     local pushedColors, pushedVars = uiApplyWindowTheme()
     local flags = 0
     if imgui.WindowFlags then
@@ -3466,38 +3526,8 @@ function _G.HZDesenharPainelMods()
         if imgui.WindowFlags.NoScrollbar then flags = flags + imgui.WindowFlags.NoScrollbar end
     end
 
-    -- Sombra externa em camadas: simula um desfoque gaussiano sem shader externo.
-    local shadowFlags = flags
-    if imgui.WindowFlags then
-        if imgui.WindowFlags.NoInputs then shadowFlags = shadowFlags + imgui.WindowFlags.NoInputs end
-        if imgui.WindowFlags.NoMove then shadowFlags = shadowFlags + imgui.WindowFlags.NoMove end
-        if imgui.WindowFlags.NoSavedSettings then shadowFlags = shadowFlags + imgui.WindowFlags.NoSavedSettings end
-        if imgui.WindowFlags.NoBringToFrontOnFocus then
-            shadowFlags = shadowFlags + imgui.WindowFlags.NoBringToFrontOnFocus
-        end
-    end
-    local sombraCamadas = {
-        { 18, 0.025 },
-        { 14, 0.035 },
-        { 10, 0.050 },
-        {  6, 0.065 }
-    }
-    local sombraRound = uiPushVar(imgui.StyleVar and imgui.StyleVar.WindowRounding, 14)
-    for i, camada in ipairs(sombraCamadas) do
-        local alcance, alpha = camada[1], camada[2]
-        local sombraCor = uiPushColor(imgui.Col and imgui.Col.WindowBg, imgui.ImVec4(0, 0, 0, alpha))
-        sombraCor = sombraCor + uiPushColor(imgui.Col and imgui.Col.Border, imgui.ImVec4(0, 0, 0, 0))
-        imgui.SetNextWindowPos(imgui.ImVec2(
-            (tonumber(configSistema.modsX) or 360) - alcance,
-            (tonumber(configSistema.modsY) or 180) - alcance
-        ), imgui.Cond.Always)
-        imgui.SetNextWindowSize(imgui.ImVec2(800 + alcance * 2, 565 + alcance * 2), imgui.Cond.Always)
-        imgui.Begin("##setor_mods_sombra_" .. tostring(i), nil, shadowFlags)
-        imgui.End()
-        uiPopColor(sombraCor)
-    end
-    uiPopVar(sombraRound)
-
+    -- Mantem uma unica janela ImGui para compatibilidade entre PCs.
+    -- Algumas versoes antigas fecham o GTA ao criar janelas auxiliares de sombra.
     imgui.SetNextWindowSize(imgui.ImVec2(800, 565), imgui.Cond.Always)
     if not _G.HZModsPosCarregada then
         imgui.SetNextWindowPos(imgui.ImVec2(
@@ -5407,7 +5437,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.30",
+    versao = "1.32",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
