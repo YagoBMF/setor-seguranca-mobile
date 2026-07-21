@@ -372,17 +372,25 @@ local function hotkeyPermitido()
 end
 
 local function avisarStaffJogadorTelado()
-    -- Regra atual: aviso de telagem no /ac pertence exclusivamente ao /reports.
-    if not (_G.HZAvisosAC and _G.HZAvisosAC.aguardandoReport) then
-        sampAddChatMessage("{FFFF00}[Setor] Aviso /ac de telagem funciona somente pelo /reports.", -1)
-        return
-    end
     if not idValido() or not nickTelado or nickTelado == "" or nickTelado == "---" then
         sampAddChatMessage("{FF0000}[Setor] Nenhum jogador valido esta sendo telado.", -1)
         return
     end
 
-    _G.HZAvisosAC.confirmarReport(nickTelado, idTelado)
+    -- Excecao autorizada: somente a tecla configuravel do Painel TV pode
+    -- avisar manualmente no /ac sem ter vindo de uma selecao do /reports.
+    local agora = os.clock and os.clock() or 0
+    local chave = tostring(nickTelado):lower() .. "|" .. tostring(idTelado)
+    if chave == tostring(_G.HZAvisosAC.ultimaChave or "")
+        and agora - tonumber(_G.HZAvisosAC.ultimoTempo or 0) < 3 then
+        sampAddChatMessage("{FFFF00}[Setor] Aviso /ac enviado recentemente.", -1)
+        return
+    end
+
+    _G.HZAvisosAC.ultimaChave = chave
+    _G.HZAvisosAC.ultimoTempo = agora
+    _G.HZAvisosAC.cancelarReport()
+    _G.HZAvisosAC.enviar("Estou telando o Player " .. tostring(nickTelado), 150)
 end
 
 -- Tabela de referência para o Modo 2 (Auto-preencher tempo ao digitar)
@@ -4903,6 +4911,32 @@ local function setor_onServerMessage(color, text)
                     _G.HZMonitorEtapa1.ativarEListar()
                 end
 
+                -- Diretor/Coordenador usam mensagens diferentes e podem chegar
+                -- com acentos convertidos. Identifica o cargo pelas palavras
+                -- estaveis da mensagem e libera o /mods pelo nick local.
+                local cargoConfirmado = nil
+                if mensagemLower:find("diretor", 1, true) then
+                    cargoConfirmado = "Diretor"
+                elseif mensagemLower:find("coorden", 1, true) then
+                    cargoConfirmado = "Coordenador"
+                end
+
+                if cargoConfirmado then
+                    cargoAdmin = cargoConfirmado
+                    nomeAdmin = tostring(sampGetPlayerNickname(meuId) or "")
+                    _G.HZStaffLogada = true
+                    stopStaffSaciarme()
+                    stopStaffSupport()
+                    if _G.HZModuloAtivo("automacoes_staff") then
+                        startStaffSaciarme()
+                        startStaffSupport(cargoAdmin)
+                    end
+                    sampAddChatMessage(
+                        "{48C6FF}[CARGO] Identificado como " .. cargoConfirmado .. ". Acesso ao /mods liberado.",
+                        -1
+                    )
+                end
+
             elseif confirmouLogout then
                 _G.HZMonitorEtapa1.adminPendenteAte = 0
                 _G.HZMonitorEtapa1.definirAdminAtivo(false, false)
@@ -5368,7 +5402,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.26",
+    versao = "1.28",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
