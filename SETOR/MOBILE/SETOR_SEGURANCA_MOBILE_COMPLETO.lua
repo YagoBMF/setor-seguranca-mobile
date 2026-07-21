@@ -5,12 +5,14 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '2.0'
+local VERSION = '2.1'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
-local UPDATE_VERSION_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/MOBILE/versao.txt'
-local UPDATE_SCRIPT_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-seguranca-mobile/main/SETOR/MOBILE/SETOR_SEGURANCA_MOBILE_COMPLETO.lua'
+local UPDATE_VERSION_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/versao.txt'
+local UPDATE_SCRIPT_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/SETOR_SEGURANCA_MOBILE_COMPLETO.lua'
+local EXTERNAL_UPDATER_PATH = (type(getWorkingDirectory) == 'function' and getWorkingDirectory() or '.') .. '/SETOR_MOBILE_UPDATER.lua'
+local HAS_EXTERNAL_UPDATER = type(doesFileExist) == 'function' and doesFileExist(EXTERNAL_UPDATER_PATH)
 
 local WEBHOOKS = {
     LOG = 'https://discord.com/api/webhooks/1472343208477593822/AsrnjXuzTjPhPZM_W9QDmGylJ6uPL5mJZJyheDwFB1FzAYO82jrrV1VBor4Xkh1d0KO0',
@@ -37,6 +39,14 @@ local cache, monitorados = {}, {}
 local rgAtual, nickAtual = nil, nil
 local pendente = nil
 local navNovato, navTodos = 0, 0
+local staffLogada = false
+local reportDialogId, aguardandoReport, reportAte = -1, false, 0
+local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
+
+local CARGOS = {
+    ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
+    ['4'] = 'Coordenador', ['5'] = 'Diretor'
+}
 
 -- Dialogos locais (faixa alta para evitar conflito com dialogos comuns do servidor)
 local D_MAIN = 28000
@@ -52,7 +62,40 @@ local D_INPUT_MONITOR = 28013
 local D_INPUT_DESMONITOR = 28014
 local D_PUNICOES = 28015
 local D_INPUT_PUNICAO = 28016
+local D_TABELA_PUNICAO = 28017
+local D_INPUT_ALVO_TABELA = 28018
+local D_CONFIRMAR_TABELA = 28019
 local dialogAction = nil
+local punicaoTabelaSelecionada = nil
+
+-- Texto visual pode manter a sigla; o comando envia somente o motivo real.
+local PUNICOES_CADEIA = {
+    {'NRA - Uso de arma em safe', 'Uso de arma em safe', 100},
+    {'ASM - Agressao sem motivo', 'Agressao sem motivo', 100},
+    {'NS - Sem amor a vida', 'Sem amor a vida', 200},
+    {'DM - Matar sem motivo', 'Matar sem motivo', 200},
+    {'Assalto loja irregular', 'Assalto loja irregular', 150},
+    {'Assalto banco irregular', 'Assalto banco irregular', 150},
+    {'Anti-RP - Roubo de caixinha sobre veiculo', 'Roubo de caixinha sobre veiculo', 200},
+    {'Anti-RP - Uso indevido de profissao', 'Uso indevido de profissao', 200},
+    {'PTR solo - Policial solo em acao', 'Policial solo em acao', 250},
+    {'VDM - Veiculo usado como arma', 'Veiculo usado como arma', 250},
+    {'DB - Atirando de dentro do veiculo', 'Atirando de dentro do veiculo', 250},
+    {'AB Desmanche - Abordagem no Desmanche', 'Abordagem no Desmanche', 250},
+    {'KOS - Matar por identificacao', 'Matar por identificacao', 250},
+    {'PG - Acao fora da realidade', 'Acao fora da realidade', 250},
+    {'TK - Matar aliado sem motivo', 'Matar aliado sem motivo', 250},
+    {'HK - Matar com helicoptero', 'Matar com helicoptero', 250},
+    {'SLP - Sniper em local proibido', 'Sniper em local proibido', 250},
+    {'Invasao sem autorizacao', 'Invasao sem autorizacao', 250},
+    {'RDM - Multiplas mortes', 'Multiplas mortes', 250},
+    {'RK - Vinganca apos morte', 'Vinganca apos morte', 250},
+    {'Spam Kill - Abusando de interior', 'Abusando de interior', 250},
+    {'Correndo safe - Abusando de safe', 'Abusando de safe em abordagem ou acao', 250},
+    {'Combat Log - Desconectou em acao', 'Desconectou em acao', 250},
+    {'Corrupcao', 'Corrupcao', 300},
+    {'Dark RP', 'Dark RP', 300}
+}
 
 local function chat(cor, texto)
     sampAddChatMessage(cor .. '[SETOR]: {FFFFFF}' .. tostring(texto), -1)
@@ -72,8 +115,27 @@ end
 
 local function perfilOk()
     if cfg.dados.nome ~= 'Vazio' then return true end
-    chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1 ou /configadm Nome 2.')
+    chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1-5.')
     return false
+end
+
+local function nivelCargo(cargo)
+    cargo = clean(cargo):lower()
+    if cargo:find('diretor', 1, true) then return 5 end
+    if cargo:find('coorden', 1, true) then return 4 end
+    if cargo:find('admin', 1, true) then return 3 end
+    if cargo:find('moder', 1, true) then return 2 end
+    if cargo:find('ajud', 1, true) then return 1 end
+    return 0
+end
+
+local function definirPerfil(nome, cargo, logado)
+    nome, cargo = trim(nome), trim(cargo)
+    if nome == '' or nivelCargo(cargo) == 0 then return false end
+    cfg.dados.nome, cfg.dados.cargo = nome, cargo
+    staffLogada = logado ~= false
+    inicfg.save(cfg, CONFIG_FILE)
+    return true
 end
 
 local function responseBody(res)
@@ -241,7 +303,7 @@ local function listaJogadores(somenteNovatos)
     for id = 0, sampGetMaxPlayerId(false) do
         if sampIsPlayerConnected(id) then
             local level = sampGetPlayerScore(id) or 0
-            if not somenteNovatos or level == 0 then
+            if not somenteNovatos or (level >= 0 and level <= 30) then
                 lista[#lista + 1] = { id = id, nick = sampGetPlayerNickname(id), level = level }
             end
         end
@@ -266,7 +328,7 @@ local function navegar(novatos, direcao)
 end
 
 local function mostrarAjuda()
-    chat('{48C6FF}', 'Mobile ' .. VERSION .. ' | Perfil: /configadm Nome 1|2')
+    chat('{48C6FF}', 'Mobile ' .. VERSION .. ' | Perfil: /configadm Nome 1-5')
     chat('{48C6FF}', '/rgnome nome | /rgatual | /rgcache | /rgdel RG')
     chat('{48C6FF}', '/monitor RG motivo | /desmonitor RG | /monitorados')
     chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
@@ -293,8 +355,46 @@ end
 
 local function abrirPunicoes()
     dialogo(D_PUNICOES, 'SETOR - PUNICOES',
-        'Ban permanente\nBan temporario\nCadeia / Punicao\nMute (somente registro)',
+        'Tabela de cadeia\nBan permanente (manual)\nBan temporario (manual)\nCadeia manual\nMute (somente registro)',
         'Continuar', 'Voltar', 2)
+end
+
+local function abrirTabelaPunicoes()
+    local linhas = {}
+    for i, item in ipairs(PUNICOES_CADEIA) do
+        linhas[i] = item[1] .. ' | ' .. tostring(item[3]) .. ' min'
+    end
+    dialogo(D_TABELA_PUNICAO, 'SETOR - TABELA DE CADEIA', table.concat(linhas, '\n'), 'Selecionar', 'Voltar', 2)
+end
+
+local function levelDoRG(rg)
+    local info = cache[tostring(rg)]
+    local nick = info and tostring(info.nick or ''):lower() or ''
+    if nick == '' then return nil end
+    for id = 0, sampGetMaxPlayerId(false) do
+        if sampIsPlayerConnected(id) and tostring(sampGetPlayerNickname(id) or ''):lower() == nick then
+            return tonumber(sampGetPlayerScore(id))
+        end
+    end
+    return nil
+end
+
+local function confirmarPunicaoTabela(rg)
+    rg = acharRG(rg) or trim(rg)
+    if not rg:match('^%d+$') or not punicaoTabelaSelecionada then
+        return chat('{FFFF00}', 'Informe um RG ou nome salvo no cache.')
+    end
+    local item = punicaoTabelaSelecionada
+    local level = levelDoRG(rg)
+    local tempo = tonumber(item[3]) or 0
+    if level and level >= 0 and level <= 30 then
+        tempo = item[2]:lower():find('dark rp', 1, true) and 150 or 50
+    end
+    dialogAction = {tipo='tabela', rg=rg, motivo=item[2], tempo=tempo, level=level}
+    local regra = level and level <= 30 and ('\nREGRA NOVATO LEVEL ' .. level .. ' APLICADA') or ''
+    dialogo(D_CONFIRMAR_TABELA, 'CONFIRMAR PUNICAO',
+        'RG: ' .. rg .. '\nMotivo: ' .. item[2] .. '\nTempo: ' .. tempo .. ' minutos' .. regra,
+        'Aplicar', 'Cancelar', 0)
 end
 
 local function abrirAcoes()
@@ -389,21 +489,27 @@ local function executarPunicaoDialogo(valor)
 end
 
 local function registrarComandos()
-    sampRegisterChatCommand('setor', abrirPrincipal)
-    sampRegisterChatCommand('setorversao', function()
-        chat('{48C6FF}', 'Versao instalada: ' .. VERSION)
-        verificarAtualizacao(false)
+    sampRegisterChatCommand('setor', function()
+        if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de abrir o painel.') end
+        abrirPrincipal()
     end)
-    sampRegisterChatCommand('setoratualizar', instalarAtualizacao)
+    if not HAS_EXTERNAL_UPDATER then
+        sampRegisterChatCommand('setorversao', function()
+            chat('{48C6FF}', 'Versao instalada: ' .. VERSION)
+            verificarAtualizacao(false)
+        end)
+        sampRegisterChatCommand('setoratualizar', instalarAtualizacao)
+    end
     sampRegisterChatCommand('configadm', function(arg)
-        local nome, id = trim(arg):match('^(%S+)%s+([12])$')
-        if not nome then return chat('{FF5555}', 'Use /configadm Nome 1 (Moderador) ou 2 (Administrador).') end
-        cfg.dados.nome = nome
-        cfg.dados.cargo = id == '1' and 'Moderador(a)' or 'Administrador(a)'
-        inicfg.save(cfg, CONFIG_FILE)
+        local nome, id = trim(arg):match('^(%S+)%s+([1-5])$')
+        if not nome then return chat('{FF5555}', 'Use /configadm Nome 1-5: Ajudante, Moderador, Administrador, Coordenador ou Diretor.') end
+        definirPerfil(nome, CARGOS[id], false)
         chat('{3EDC81}', 'Perfil definido: ' .. cfg.dados.cargo .. ' ' .. nome)
     end)
-    sampRegisterChatCommand('mods', abrirModulos)
+    sampRegisterChatCommand('mods', function()
+        if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de abrir os modulos.') end
+        abrirModulos()
+    end)
     sampRegisterChatCommand('modulo', function(arg)
         local nome, estado = trim(arg):match('^(%S+)%s+(on|off)$')
         if not nome or cfg.modulos[nome] == nil then return chat('{FFFF00}', 'Use /modulo logs|monitoramento|navegacao|atalhos on|off') end
@@ -483,17 +589,30 @@ local function registrarComandos()
     end)
 end
 
+function samp.onShowDialog(dialogId, style, title, button1, button2, text)
+    local agora = os.clock and os.clock() or 0
+    if reportDialogId == -2 and agora <= reportAte then
+        reportDialogId = tonumber(dialogId) or -1
+    end
+end
+
 function samp.onSendDialogResponse(dialogId, button, listboxId, input)
+    if tonumber(dialogId) == tonumber(reportDialogId) then
+        reportDialogId = -1
+        aguardandoReport = tonumber(button) == 1
+        reportAte = aguardandoReport and ((os.clock and os.clock() or 0) + 15) or 0
+        return
+    end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_INPUT_PUNICAO then return end
+    if dialogId < D_MAIN or dialogId > D_CONFIRMAR_TABELA then return end
 
     if button == 0 then
         if dialogId == D_MAIN then return false end
-        if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or
+        if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or dialogId == D_INPUT_ALVO_TABELA or dialogId == D_CONFIRMAR_TABELA or
            dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL or
            dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
             abrirPrincipal()
-        elseif dialogId == D_TV or dialogId == D_PUNICOES or dialogId == D_ACOES or
+        elseif dialogId == D_TV or dialogId == D_PUNICOES or dialogId == D_TABELA_PUNICAO or dialogId == D_ACOES or
                dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_MODULOS then
             abrirPrincipal()
         end
@@ -519,8 +638,22 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         end
         lua_thread.create(function() wait(150) abrirTV() end)
     elseif dialogId == D_PUNICOES then
-        local tipos = {'ban', 'bantemp', 'cadeia', 'mute'}
-        if tipos[listboxId + 1] then pedirPunicao(tipos[listboxId + 1]) end
+        local tipos = {nil, 'ban', 'bantemp', 'cadeia', 'mute'}
+        if listboxId == 0 then abrirTabelaPunicoes()
+        elseif tipos[listboxId + 1] then pedirPunicao(tipos[listboxId + 1]) end
+    elseif dialogId == D_TABELA_PUNICAO then
+        punicaoTabelaSelecionada = PUNICOES_CADEIA[listboxId + 1]
+        if punicaoTabelaSelecionada then
+            dialogo(D_INPUT_ALVO_TABELA, 'SETOR - ALVO DA PUNICAO', 'Digite o RG ou nome salvo no cache:', 'Continuar', 'Cancelar', 1)
+        end
+    elseif dialogId == D_INPUT_ALVO_TABELA then
+        confirmarPunicaoTabela(input)
+    elseif dialogId == D_CONFIRMAR_TABELA then
+        if type(dialogAction) == 'table' and dialogAction.tipo == 'tabela' then
+            sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+            dialogAction = nil
+            punicaoTabelaSelecionada = nil
+        end
     elseif dialogId == D_ACOES then
         local acoes = {'ir', 'trazer', 'reviver', 'congelar', 'descongelar', 'armas', 'vida', 'colete'}
         local acao = acoes[listboxId + 1]
@@ -576,6 +709,15 @@ end
 
 function samp.onSendCommand(command)
     if not perfilOk() then return end
+    local cmdLimpo = trim(command):lower()
+    if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
+        reportDialogId, aguardandoReport = -2, false
+        reportAte = (os.clock and os.clock() or 0) + 60
+    elseif cmdLimpo:match('^/tv%s+') then
+        aguardandoReport, reportDialogId, reportAte = false, -1, 0
+    elseif cmdLimpo == '/da' or cmdLimpo == '/sairadm' or cmdLimpo == '/deslogaradm' then
+        staffLogada = false
+    end
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
     local tempo
@@ -599,13 +741,34 @@ end
 
 function samp.onServerMessage(color, text)
     local ct = clean(text)
+    local baixo = ct:lower()
+
+    -- Detecta automaticamente Ajudante, Moderador, Administrador, Coordenador e Diretor.
+    local cargoLogin, nomeLogin = ct:match('[Oo]la%s+([^%s]+)%s+([%w_]+),.-logou.-administra')
+    if not cargoLogin then
+        cargoLogin, nomeLogin = ct:match('ADMIN:%s+O%(A%)%s+([^%s]+)%s+([%w_]+)%[%d+%]%s+logou%s+na%s+staff')
+    end
+    if cargoLogin and nomeLogin and nivelCargo(cargoLogin) > 0 then
+        definirPerfil(nomeLogin, CARGOS[tostring(nivelCargo(cargoLogin))] or cargoLogin, true)
+    end
     local nick, rg = ct:match('[Nn]ome[:%s]+([%w_]+).-RG[:%s]+(%d+)')
     if not nick then nick, rg = ct:match('[Nn]ick[:%s]+([%w_]+).-RG[:%s]+(%d+)') end
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nome[:%s]+([%w_]+)') end
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nick[:%s]+([%w_]+)') end
     if nick and rg then salvarRG(rg, nick); rgAtual, nickAtual = rg, nick end
     local tvNick, tvRg = ct:match('[Tt]elando.-([%w_]+).-RG[:%s]+(%d+)')
-    if tvNick and tvRg then salvarRG(tvRg, tvNick); rgAtual, nickAtual = tvRg, tvNick end
+    if tvNick and tvRg then
+        salvarRG(tvRg, tvNick); rgAtual, nickAtual = tvRg, tvNick
+        local agora = os.clock and os.clock() or 0
+        if aguardandoReport and agora <= reportAte then
+            local chave = tvNick:lower() .. '|' .. tvRg
+            if chave ~= ultimoAvisoReport or agora - ultimoAvisoReportEm > 6 then
+                ultimoAvisoReport, ultimoAvisoReportEm = chave, agora
+                lua_thread.create(function() wait(350) sampSendChat('/ac Estou telando o Player ' .. tvNick) end)
+            end
+            aguardandoReport, reportAte = false, 0
+        end
+    end
 
     if pendente and ct:find('HZ%-ADMIN') then
         local alvoNick = ct:match('[Jj]ogador%(a%)%s+([%w_]+)') or (cache[pendente.rg] and cache[pendente.rg].nick)
@@ -632,11 +795,13 @@ function main()
     if cfg.dados.nome ~= 'Vazio' then
         chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo: ' .. cfg.dados.cargo .. ' ' .. cfg.dados.nome .. '. Use /setor.')
     else
-        chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1 ou 2.')
+        chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1-5.')
     end
-    lua_thread.create(function()
-        wait(4000)
-        verificarAtualizacao(true)
-    end)
+    if not HAS_EXTERNAL_UPDATER then
+        lua_thread.create(function()
+            wait(4000)
+            verificarAtualizacao(true)
+        end)
+    end
     wait(-1)
 end
