@@ -4291,9 +4291,9 @@ local function setor_main()
             if item and os.clock() >= (item.processarEm or 0) then
                 table.remove(filaCapturaNomeRG, 1)
 
-                if type(_G.HZCapturarParesNomeRGDoChat) == "function" then
-                    _G.HZCapturarParesNomeRGDoChat(item.texto)
-                end
+                -- Captura passiva desativada temporariamente: algumas builds do
+                -- MoonLoader encerram a coroutine ao consultar a TAB nesta fila.
+                -- O cache principal por /tv e textdraw continua funcionando.
             end
         end
 
@@ -5436,7 +5436,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.36",
+    versao = "1.37",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
