@@ -1189,6 +1189,25 @@ _G.HZPermissaoMinimaModulo = {
     automacoes_staff = 1
 }
 
+-- Alguns servidores repetem a confirmacao de login administrativo em eventos
+-- consecutivos. Centraliza o aviso para nao duplicar mensagens nem inicializacoes.
+_G.HZUltimoAvisoCargo = _G.HZUltimoAvisoCargo or { chave = "", tempo = 0 }
+function _G.HZAvisarCargoUmaVez(cargo, nome, sufixo)
+    local agora = os.clock and os.clock() or 0
+    local chave = tostring(cargo or ""):lower() .. "|" .. tostring(nome or ""):lower()
+    if _G.HZUltimoAvisoCargo.chave == chave
+        and agora - (tonumber(_G.HZUltimoAvisoCargo.tempo) or 0) < 5 then
+        return false
+    end
+    _G.HZUltimoAvisoCargo.chave = chave
+    _G.HZUltimoAvisoCargo.tempo = agora
+    sampAddChatMessage(
+        "{48C6FF}[CARGO] Identificado como " .. tostring(cargo or "Staff") .. ". " .. tostring(sufixo or "Permissoes aplicadas."),
+        -1
+    )
+    return true
+end
+
 function _G.HZNivelCargo(cargo)
     cargo = tostring(cargo or ""):lower()
     if cargo:find("diretor", 1, true) then return 5, "Diretor" end
@@ -5112,10 +5131,7 @@ local function setor_onServerMessage(color, text)
                         startStaffSaciarme()
                         startStaffSupport(cargoAdmin)
                     end
-                    sampAddChatMessage(
-                        "{48C6FF}[CARGO] Identificado como " .. cargoConfirmado .. ". Acesso ao /mods liberado.",
-                        -1
-                    )
+                    _G.HZAvisarCargoUmaVez(cargoConfirmado, nomeAdmin, "Acesso ao /mods liberado.")
                 end
 
             elseif confirmouLogout then
@@ -5210,7 +5226,7 @@ local function setor_onServerMessage(color, text)
                 end
             end
 
-            sampAddChatMessage("{48C6FF}[CARGO] Identificado como " .. cargoNome .. ". Permissoes aplicadas.", -1)
+            _G.HZAvisarCargoUmaVez(cargoNome, nomeAdmin, "Permissoes aplicadas.")
 
             -- O monitor já foi ativado pela captura genérica acima.
             -- Aqui mantemos somente a captura de cargo/nick e os serviços da staff.
@@ -5242,10 +5258,7 @@ local function setor_onServerMessage(color, text)
                     startStaffSupport(cargoAdmin)
                 end
 
-                sampAddChatMessage(
-                    "{48C6FF}[CARGO] Identificado como " .. cargoNomeSuperior .. ". Permissoes completas aplicadas.",
-                    -1
-                )
+                _G.HZAvisarCargoUmaVez(cargoNomeSuperior, nomeAdmin, "Permissoes completas aplicadas.")
             end
         end
     end
@@ -5583,7 +5596,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.39",
+    versao = "1.40",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
