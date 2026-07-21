@@ -5487,21 +5487,28 @@ function _G.HZUpdaterPC.verificar(silencioso)
             return
         end
         if _G.HZUpdaterPC.remotaMaior(remota, _G.HZUpdaterPC.versao) then
-            sampAddChatMessage("{FFFF00}[SETOR UPDATE]: Nova versao " .. remota .. " disponivel. Use /setoratualizar.", -1)
+            if silencioso then
+                -- Na verificacao automatica da inicializacao, instala sem exigir comando.
+                _G.HZUpdaterPC.instalar(true)
+            else
+                sampAddChatMessage("{FFFF00}[SETOR UPDATE]: Nova versao " .. remota .. " disponivel. Use /setoratualizar.", -1)
+            end
         elseif not silencioso then
             sampAddChatMessage("{00FF7F}[SETOR UPDATE]: Versao " .. _G.HZUpdaterPC.versao .. " ja esta atualizada.", -1)
         end
     end)
 end
 
-function _G.HZUpdaterPC.instalar()
+function _G.HZUpdaterPC.instalar(silencioso)
     if _G.HZUpdaterPC.consultando then
         sampAddChatMessage("{FFFF00}[SETOR UPDATE]: Aguarde a consulta atual terminar.", -1)
         return
     end
     _G.HZUpdaterPC.consultando = true
     lua_thread.create(function()
-        sampAddChatMessage("{48C6FF}[SETOR UPDATE]: Baixando atualizacao...", -1)
+        if not silencioso then
+            sampAddChatMessage("{48C6FF}[SETOR UPDATE]: Baixando atualizacao...", -1)
+        end
         local remota = _G.HZUpdaterPC.obterVersao()
         if not remota then
             _G.HZUpdaterPC.consultando = false
@@ -5509,7 +5516,10 @@ function _G.HZUpdaterPC.instalar()
         end
         if not _G.HZUpdaterPC.remotaMaior(remota, _G.HZUpdaterPC.versao) then
             _G.HZUpdaterPC.consultando = false
-            return sampAddChatMessage("{00FF7F}[SETOR UPDATE]: Nenhuma atualizacao disponivel.", -1)
+            if not silencioso then
+                sampAddChatMessage("{00FF7F}[SETOR UPDATE]: Nenhuma atualizacao disponivel.", -1)
+            end
+            return
         end
 
         local ok, res = pcall(requests.get, _G.HZUpdaterPC.urlScript)
