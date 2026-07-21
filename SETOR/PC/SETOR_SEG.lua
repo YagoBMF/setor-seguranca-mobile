@@ -4894,17 +4894,22 @@ local function setor_onServerMessage(color, text)
         end
 
         local mensagemEhMinha = meuNick ~= "" and mensagemLower:find(meuNick, 1, true) ~= nil
+        local loginEstavaPendente = (tonumber(_G.HZMonitorEtapa1.adminPendenteAte) or 0)
+            > (os.clock and os.clock() or 0)
+        local mensagemPessoalLogin = loginEstavaPendente
+            and mensagemLower:find("voc", 1, true) ~= nil
+            and mensagemLower:find("logou", 1, true) ~= nil
 
-        if mensagemEhMinha then
+        if mensagemEhMinha or mensagemPessoalLogin then
             local confirmouLogin =
-                mensagemLower:find("logou na staff", 1, true)
-                or mensagemLower:find("logou na administracao", 1, true)
-                or mensagemLower:find("logou na administração", 1, true)
+                mensagemLower:find("logou", 1, true)
+                and (mensagemLower:find("staff", 1, true)
+                    or mensagemLower:find("administra", 1, true))
 
             local confirmouLogout =
-                mensagemLower:find("deslogou da staff", 1, true)
-                or mensagemLower:find("deslogou da administracao", 1, true)
-                or mensagemLower:find("deslogou da administração", 1, true)
+                mensagemLower:find("deslogou", 1, true)
+                and (mensagemLower:find("staff", 1, true)
+                    or mensagemLower:find("administra", 1, true))
 
             if confirmouLogin then
                 if (_G.HZMonitorEtapa1.adminPendenteAte or 0) > 0 then
@@ -5036,11 +5041,11 @@ local function setor_onServerMessage(color, text)
         end
     end
 
-    -- Formato alternativo usado por Coordenador e Diretor:
-    -- "Ola Diretor(a) Nome, voce logou na administracao com sucesso!"
+    -- Formato usado por Coordenador e Diretor, inclusive com prefixo de horario/INFO:
+    -- "[21:05:48] INFO: Ola Diretor(a) Nome, voce logou na administracao com sucesso!"
     if not _G.HZStaffLogada then
         local cargoSuperior, nomeSuperior = cleanText:match(
-            "^[Oo]la%s+([^%s]+)%s+([%a%d_]+),%s+voce%s+logou%s+na%s+administra"
+            "[Oo]la%s+([^%s]+)%s+([%a%d_]+),.-logou.-administra"
         )
         if cargoSuperior and nomeSuperior then
             local nivelSuperior, cargoNomeSuperior = _G.HZNivelCargo(cargoSuperior)
@@ -5402,7 +5407,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.28",
+    versao = "1.30",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
