@@ -241,6 +241,20 @@ local function setCursor(state)
     imgui.ShowCursor = cursorAtivo
 end
 
+-- Se o chat do SA-MP estiver aberto, ele captura as letras antes do ImGui.
+-- Ao clicar em um campo do painel, fecha somente a entrada do chat e devolve
+-- o foco ao ultimo item desenhado (o proprio campo clicado).
+local function garantirFocoCampoPainel()
+    if not imgui.IsItemClicked or not imgui.IsItemClicked() then return end
+    if type(sampIsChatInputActive) == "function" and sampIsChatInputActive()
+        and type(sampSetChatInputEnabled) == "function" then
+        sampSetChatInputEnabled(false)
+    end
+    if imgui.SetKeyboardFocusHere then
+        pcall(imgui.SetKeyboardFocusHere, -1)
+    end
+end
+
 -- ======================
 -- CONFIGURAÇÕES (NOVAS)
 -- ======================
@@ -851,6 +865,7 @@ local function paineltv_OnDrawFrame()
             if _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then
                 imgui.PushItemWidth(-1)
                 imgui.InputText(u8"##motivo_monitoramento", _G.HZMonitorEtapa1.motivoBuffer)
+                garantirFocoCampoPainel()
                 imgui.PopItemWidth()
                 imgui.TextColored(C_MUTED, u8"Informe o motivo do monitoramento")
 
@@ -872,6 +887,7 @@ local function paineltv_OnDrawFrame()
         imgui.SameLine()
         imgui.PushItemWidth(54)
         imgui.InputInt("##val", valorStatus, 0, 0)
+        garantirFocoCampoPainel()
         imgui.PopItemWidth()
         imgui.SameLine(0, 2)
         if hzButton(u8"+", imgui.ImVec2(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
@@ -937,6 +953,7 @@ local function paineltv_OnDrawFrame()
         if modoPainel == 1 then
             imgui.PushItemWidth(-1)
             imgui.InputText(u8"Pesquisar", pesquisa)
+            garantirFocoCampoPainel()
             imgui.PopItemWidth()
             local lista = (menuAtual == "lista_cadeia" and motivosCadeia) or (menuAtual == "lista_mute" and motivosMute) or (menuAtual == "lista_ban" and motivosBan) or motivosKick
             imgui.BeginChild("sc", imgui.ImVec2(0, H_CHILD_LIST), true)
@@ -958,7 +975,9 @@ local function paineltv_OnDrawFrame()
         else
             imgui.TextColored(C_MUTED, u8("Motivo Manual (" .. labelPunicao .. ")"))
             imgui.PushItemWidth(-1)
-            if imgui.InputText("##mman", bufMotivoManual) then
+            local alterouMotivoManual = imgui.InputText("##mman", bufMotivoManual)
+            garantirFocoCampoPainel()
+            if alterouMotivoManual then
                 local motUpper = bufMotivoManual.v:upper()
                 local listaAtual = (comandoBase == "/punicao" and motivosCadeia)
                     or (comandoBase == "/mute" and motivosMute)
@@ -988,6 +1007,7 @@ local function paineltv_OnDrawFrame()
                 imgui.TextColored(C_MUTED, comandoBase == "/punicao" and u8"Tempo (Minutos)" or u8"Tempo (Dias)")
                 imgui.PushItemWidth(-1)
                 imgui.InputInt("##tman", tempoPunicao)
+                garantirFocoCampoPainel()
                 imgui.PopItemWidth()
             end
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
@@ -1026,6 +1046,7 @@ local function paineltv_OnDrawFrame()
         if comandoBase ~= "/kick" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
+            garantirFocoCampoPainel()
         end
         imgui.EndChild()
 
@@ -4145,6 +4166,7 @@ function _G.HZMonitorPanel.desenhar()
 
     imgui.PushItemWidth(-1)
     imgui.InputText("##monitor_busca", _G.HZMonitorPanel.busca)
+    garantirFocoCampoPainel()
     imgui.PopItemWidth()
     uiTextColor(UI_HZ.muted, "Pesquisar por nick, RG ou motivo")
     imgui.Separator()
@@ -5759,7 +5781,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.45",
+    versao = "1.46",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
