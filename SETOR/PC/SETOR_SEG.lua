@@ -519,6 +519,7 @@ local function paineltv_main()
 
     while true do
         wait(0)
+        _G.HZProcessarFilaTextdraw()
 
         -- Hotkeys (opcionais)
         if hotkeyPermitido() then
@@ -5497,6 +5498,29 @@ local function setor_onServerMessage(color, text)
 end
 
 -- ================== HOOKS: /tv manual e TEXTDRAWS ==================
+-- TextDraw chega dentro da leitura nativa de pacotes do SA-MP. Todo trabalho
+-- real e adiado para evitar reentrada no SAMPFUNCS durante uma telagem.
+_G.HZFilaTextdraw = _G.HZFilaTextdraw or {}
+
+function _G.HZEnfileirarTextdraw(texto)
+    if type(texto) ~= "string" or texto == "" then return end
+    _G.HZFilaTextdraw[#_G.HZFilaTextdraw + 1] = {
+        texto = texto,
+        processarEm = (os.clock and os.clock() or 0) + 0.08
+    }
+    if #_G.HZFilaTextdraw > 120 then table.remove(_G.HZFilaTextdraw, 1) end
+end
+
+function _G.HZProcessarFilaTextdraw()
+    local item = _G.HZFilaTextdraw[1]
+    if not item or (os.clock and os.clock() or 0) < (item.processarEm or 0) then return end
+    table.remove(_G.HZFilaTextdraw, 1)
+    paineltv_parse_info(item.texto)
+    local rg, pid = try_parse_rg_and_id_from_text(item.texto)
+    local nick = try_parse_nick_from_text(item.texto)
+    if rg or pid or nick then maybe_store_and_announce(rg, pid, nick) end
+end
+
 local function setor_onShowTextDraw(id, data)
     if type(data) == "table" and data.text then
         local rg, pid = try_parse_rg_and_id_from_text(data.text)
@@ -5759,7 +5783,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.48",
+    versao = "1.49",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
@@ -5962,23 +5986,19 @@ function samp.onServerMessage(color, text)
 end
 
 function sampev.onShowTextDraw(id, data)
-    if _G.HZModuloAtivo("painel_tv") and _G.PainelTVModule and _G.PainelTVModule.onShowTextDraw then _G.PainelTVModule.onShowTextDraw(id, data) end
-    if setor_onShowTextDraw then return setor_onShowTextDraw(id, data) end
+    if type(data) == "table" then _G.HZEnfileirarTextdraw(data.text) end
 end
 
 function sampev.onTextDrawSetString(id, text)
-    if _G.HZModuloAtivo("painel_tv") and _G.PainelTVModule and _G.PainelTVModule.onTextDrawSetString then _G.PainelTVModule.onTextDrawSetString(id, text) end
-    if setor_onTextDrawSetString then return setor_onTextDrawSetString(id, text) end
+    _G.HZEnfileirarTextdraw(text)
 end
 
 function sampev.onShowPlayerTextDraw(playerId, data)
-    if _G.HZModuloAtivo("painel_tv") and _G.PainelTVModule and _G.PainelTVModule.onShowPlayerTextDraw then _G.PainelTVModule.onShowPlayerTextDraw(playerId, data) end
-    if setor_onShowPlayerTextDraw then return setor_onShowPlayerTextDraw(playerId, data) end
+    if type(data) == "table" then _G.HZEnfileirarTextdraw(data.text) end
 end
 
 function sampev.onPlayerTextDrawSetString(playerId, id, text)
-    if _G.HZModuloAtivo("painel_tv") and _G.PainelTVModule and _G.PainelTVModule.onPlayerTextDrawSetString then _G.PainelTVModule.onPlayerTextDrawSetString(playerId, id, text) end
-    if setor_onPlayerTextDrawSetString then return setor_onPlayerTextDrawSetString(playerId, id, text) end
+    _G.HZEnfileirarTextdraw(text)
 end
 
 function samp.onPlayerQuit(id, reason)
