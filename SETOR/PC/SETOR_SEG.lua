@@ -411,20 +411,32 @@ local tabelaTempos = {
 -- ======================
 -- LISTAS DE MOTIVOS
 -- ======================
+-- Formato: {texto exibido, tempo, motivo enviado}. O terceiro campo permite
+-- mostrar siglas no painel sem envia-las no comando de punicao.
 local motivosCadeia = {
-    {"NRA - Uso de arma em safe", 100}, {"ASM - Agressao sem motivo", 100},
-    {"NS - Sem amor a vida", 200}, {"DM - Matar sem motivo", 200},
+    {"NRA - Uso de arma em safe", 100, "Uso de arma em safe"},
+    {"ASM - Agressao sem motivo", 100, "Agressao sem motivo"},
+    {"NS - Sem amor a vida", 200, "Sem amor a vida"},
+    {"DM - Matar sem motivo", 200, "Matar sem motivo"},
     {"Assalto loja irregular", 150}, {"Assalto banco irregular", 150},
-    {"Anti-RP - Roubo de caixinha sobre veiculo", 200},
-    {"Anti-RP - Uso indevido de profissao", 200},
-    {"PTR solo - Policial solo em acao", 250}, {"VDM - Veiculo usado como arma", 250},
-    {"DB - Atirando de dentro do veiculo", 250}, {"AB Desmanche", 250},
-    {"KOS - Matar por identificacao", 250}, {"PG - Acao fora da realidade", 250},
-    {"TK - Matar aliado sem motivo", 250}, {"HK - Matar com helicoptero", 250},
-    {"SLP - Sniper em local proibido", 250}, {"Invasao sem autorizacao", 250},
-    {"RDM - Multiplas mortes", 250}, {"RK - Vinganca apos morte", 250},
-    {"Spam Kill - Abusando de interior", 250}, {"Correndo safe em AB/Acao", 250},
-    {"Combat Log - Desconectou em acao", 250}, {"Corrupcao", 300}, {"Dark RP", 300}
+    {"Anti-RP - Roubo de caixinha sobre veiculo", 200, "Roubo de caixinha sobre veiculo"},
+    {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
+    {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
+    {"VDM - Veiculo usado como arma", 250, "Veiculo usado como arma"},
+    {"DB - Atirando de dentro do veiculo", 250, "Atirando de dentro do veiculo"},
+    {"AB Desmanche", 250, "Abordagem no Desmanche"},
+    {"KOS - Matar por identificacao", 250, "Matar por identificacao"},
+    {"PG - Acao fora da realidade", 250, "Acao fora da realidade"},
+    {"TK - Matar aliado sem motivo", 250, "Matar aliado sem motivo"},
+    {"HK - Matar com helicoptero", 250, "Matar com helicoptero"},
+    {"SLP - Sniper em local proibido", 250, "Sniper em local proibido"},
+    {"Invasao sem autorizacao", 250},
+    {"RDM - Multiplas mortes", 250, "Multiplas mortes"},
+    {"RK - Vinganca apos morte", 250, "Vinganca apos morte"},
+    {"Spam Kill - Abusando de interior", 250, "Abusando de interior"},
+    {"Correndo safe em AB/Acao", 250},
+    {"Combat Log - Desconectou em acao", 250, "Desconectou em acao"},
+    {"Corrupcao", 300}, {"Dark RP", 300}
 }
 local motivosMute = {
     {"MUCS - Restricao", 3}, {"MUC Atendimento", 3}, {"MUC Duvida", 3},
@@ -924,9 +936,9 @@ local function paineltv_OnDrawFrame()
             for _, v in ipairs(lista) do
                 if v[1]:lower():find(pesquisa.v:lower()) then
                     if hzButton(u8(v[1] .. "  |  " .. tostring(v[2])), imgui.ImVec2(-1, 27), C_CARD, C_HOVER, C_ACTIVE) then
-                        motivoSel = v[1]
+                        motivoSel = v[3] or v[1]
                         if comandoBase == "/punicao" then
-                            tempoPunicao.v = tempoCadeiaPorLevel(v[1], v[2])
+                            tempoPunicao.v = tempoCadeiaPorLevel(v[3] or v[1], v[2])
                         else
                             tempoPunicao.v = v[2]
                         end
@@ -947,7 +959,7 @@ local function paineltv_OnDrawFrame()
                 local sugestao = localizarMotivoDigitado(bufMotivoManual.v, listaAtual)
                 local tempoEncontrado = tabelaTempos[motUpper]
                 if sugestao then
-                    motivoSel = sugestao[1]
+                    motivoSel = sugestao[3] or sugestao[1]
                     tempoEncontrado = sugestao[2]
                 else
                     motivoSel = bufMotivoManual.v
@@ -5719,7 +5731,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.43",
+    versao = "1.44",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
