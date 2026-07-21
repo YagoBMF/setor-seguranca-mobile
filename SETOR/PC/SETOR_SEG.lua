@@ -8,9 +8,16 @@ do
 -- integrado: script_author removido
 require "lib.moonloader"
 local imgui = require "imgui"
--- O /mods usa mimgui quando a biblioteca estiver instalada. O pcall mantem
--- o restante do mod funcionando normalmente em PCs que ainda nao a possuem.
-_G.HZMimguiOk, _G.HZMimgui = pcall(require, "mimgui")
+-- mimgui fica desativado por padrao porque algumas combinacoes de GTA/ASI
+-- fecham o jogo apenas ao inicializar o backend. A ativacao e explicitamente
+-- registrada por um marcador; sem ele, /mods usa o painel compativel.
+_G.HZMimguiMarcador = getWorkingDirectory() .. "\\config\\hz_mimgui.enable"
+_G.HZMimguiAtivado = doesFileExist(_G.HZMimguiMarcador)
+if _G.HZMimguiAtivado then
+    _G.HZMimguiOk, _G.HZMimgui = pcall(require, "mimgui")
+else
+    _G.HZMimguiOk, _G.HZMimgui = false, nil
+end
 local encoding = require "encoding"
 encoding.default = "CP1252"
 u8 = encoding.UTF8
@@ -4384,7 +4391,8 @@ local function setor_main()
             _G.HZModsJanela.v = true
             imgui.Process = true
         end
-        if _G.HZModsJanela.v and not _G.HZMimguiOk and configSistema.modsModoSeguro ~= true then
+        if _G.HZModsJanela.v and _G.HZMimguiAtivado and not _G.HZMimguiOk
+            and configSistema.modsModoSeguro ~= true then
             sampAddChatMessage("{FFC857}[MODS] mimgui nao encontrado. Painel compativel ativado.", -1)
             sampAddChatMessage("{A8B5C8}[MODS] Instale o mimgui para usar o novo design.", -1)
         end
@@ -4400,6 +4408,26 @@ local function setor_main()
         else
             sampAddChatMessage("{48C6FF}[MODS] Painel avancado reativado. Agora use /mods.", -1)
         end
+    end)
+
+    sampRegisterChatCommand("modsmimgui", function()
+        _G.HZFecharPainelMods()
+        if doesFileExist(_G.HZMimguiMarcador) then
+            os.remove(_G.HZMimguiMarcador)
+            sampAddChatMessage("{3EDC81}[MODS] mimgui desativado. Reinicie o GTA para usar o painel seguro.", -1)
+            return
+        end
+        local pastaConfig = getWorkingDirectory() .. "\\config"
+        if not doesDirectoryExist(pastaConfig) then createDirectory(pastaConfig) end
+        local arquivo = io.open(_G.HZMimguiMarcador, "w+")
+        if not arquivo then
+            sampAddChatMessage("{FF5555}[MODS] Nao foi possivel habilitar o mimgui nesta instalacao.", -1)
+            return
+        end
+        arquivo:write("enabled")
+        arquivo:close()
+        sampAddChatMessage("{FFC857}[MODS] mimgui habilitado. Reinicie o GTA para testar.", -1)
+        sampAddChatMessage("{A8B5C8}[MODS] Se houver crash, apague config\\hz_mimgui.enable.", -1)
     end)
 
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
@@ -5731,7 +5759,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.44",
+    versao = "1.45",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
