@@ -3743,9 +3743,10 @@ function _G.HZDesenharPainelModsMimgui()
         _G.HZModsPosCarregadaMimgui = true
     end
 
-    mi.PushStyleVar(mi.StyleVar.WindowRounding, 10)
-    mi.PushStyleVar(mi.StyleVar.FrameRounding, 7)
-    mi.PushStyleVar(mi.StyleVar.ItemSpacing, mi.ImVec2(9, 8))
+    -- mimgui 1.7.x separa variantes float e ImVec2 desta funcao.
+    mi.PushStyleVarFloat(mi.StyleVar.WindowRounding, 10)
+    mi.PushStyleVarFloat(mi.StyleVar.FrameRounding, 7)
+    mi.PushStyleVarVec2(mi.StyleVar.ItemSpacing, mi.ImVec2(9, 8))
     mi.PushStyleColor(mi.Col.WindowBg, mi.ImVec4(0.015, 0.025, 0.045, 0.98))
     mi.PushStyleColor(mi.Col.ChildBg, mi.ImVec4(0.025, 0.045, 0.075, 0.96))
     mi.PushStyleColor(mi.Col.Border, mi.ImVec4(0.08, 0.55, 0.78, 0.65))
@@ -3847,7 +3848,16 @@ if _G.HZMimguiOk then
             local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
             return _G.HZModsJanela.v and configSistema.modsModoSeguro ~= true and versaoMoonLoader > 26
         end,
-        function() _G.HZDesenharPainelModsMimgui() end
+        function()
+            local okPainel, erroPainel = pcall(_G.HZDesenharPainelModsMimgui)
+            if not okPainel then
+                configSistema.modsModoSeguro = true
+                _G.HZModsJanela.v = false
+                salvarConfigSistema(true)
+                print("[SETOR /MODS] Falha no mimgui: " .. tostring(erroPainel))
+                sampAddChatMessage("{FFC857}[MODS] Falha visual detectada. Modo seguro ativado; use /mods novamente.", -1)
+            end
+        end
     )
 end
 
@@ -5596,7 +5606,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.40",
+    versao = "1.41",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
