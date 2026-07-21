@@ -204,6 +204,7 @@ local alturaJanela = 100
 
 -- Relogio do servidor (capturado do TextDraw do Horizonte)
 local relogioServidor = ""
+local dataServidor = ""
 local ultimoRelogioServidor = 0
 
 local function paineltv_limpar_textdraw(text)
@@ -224,7 +225,13 @@ local function paineltv_tentar_capturar_relogio(text)
         local lower = clean:lower()
         local temMes = lower:match("jan") or lower:match("fev") or lower:match("mar") or lower:match("abr") or lower:match("mai") or lower:match("jun") or lower:match("jul") or lower:match("ago") or lower:match("set") or lower:match("out") or lower:match("nov") or lower:match("dez")
         if temMes then
-            -- Usa somente a hora real do servidor. Nao substitui pelo relogio do PC.
+            local meses = {jan=1, fev=2, mar=3, abr=4, mai=5, jun=6, jul=7, ago=8, set=9, out=10, nov=11, dez=12}
+            local dia, mesTxt, ano = lower:match("(%d%d?)%s+([%a]+)%s+(%d%d%d%d)")
+            local mes = mesTxt and meses[mesTxt:sub(1, 3)] or nil
+            if dia and mes and ano then
+                dataServidor = string.format("%02d/%02d/%02d", tonumber(dia), mes, tonumber(ano) % 100)
+            end
+            -- Usa somente data/hora reais do servidor. Nao substitui pelo relogio do PC.
             relogioServidor = clean:match("(%d%d?:%d%d:%d%d)") or ""
             ultimoRelogioServidor = os.clock and os.clock() or 0
         end
@@ -903,8 +910,8 @@ local function paineltv_OnDrawFrame()
         imgui.EndChild()
 
         -- Relogio discreto no rodape do Painel TV
-        local relogioTxt = relogioServidor ~= "" and ("HORARIO DO SERVIDOR  |  " .. relogioServidor)
-            or "HORARIO DO SERVIDOR  |  --:--:--"
+        local relogioTxt = "DATA E HORARIO  |  " .. (dataServidor ~= "" and dataServidor or "--/--/--")
+            .. "  |  " .. (relogioServidor ~= "" and relogioServidor or "--:--:--")
 
         imgui.Spacing()
         imgui.Separator()
@@ -5804,7 +5811,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.54",
+    versao = "1.55",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
