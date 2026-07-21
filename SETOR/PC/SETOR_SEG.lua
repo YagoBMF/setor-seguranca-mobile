@@ -1161,6 +1161,7 @@ local configSistema = {
     monitoradosY = 220,
     modsX = 360,
     modsY = 180,
+    modsModoSeguro = false,
     modulos = {
         painel_tv = true,
         navegacao_tv = true,
@@ -3514,7 +3515,7 @@ end
 function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
     local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
-    if versaoMoonLoader <= 26 then
+    if configSistema.modsModoSeguro == true or versaoMoonLoader <= 26 then
         return _G.HZDesenharPainelModsCompat()
     end
     local pushedColors, pushedVars = uiApplyWindowTheme()
@@ -4103,6 +4104,17 @@ local function setor_main()
             imgui.Process = true
         end
         sampAddChatMessage(_G.HZModsJanela.v and "{48C6FF}[MODS] Central de modulos aberta." or "{A8B5C8}[MODS] Central de modulos fechada.", -1)
+    end)
+
+    sampRegisterChatCommand("modsseguro", function()
+        configSistema.modsModoSeguro = not (configSistema.modsModoSeguro == true)
+        _G.HZFecharPainelMods()
+        salvarConfigSistema(true)
+        if configSistema.modsModoSeguro then
+            sampAddChatMessage("{3EDC81}[MODS] Modo seguro ativado. Agora use /mods.", -1)
+        else
+            sampAddChatMessage("{48C6FF}[MODS] Painel avancado reativado. Agora use /mods.", -1)
+        end
     end)
 
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
@@ -5436,7 +5448,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.37",
+    versao = "1.38",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     consultando = false
