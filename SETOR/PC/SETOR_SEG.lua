@@ -468,7 +468,7 @@ local motivosBan = {
     {"Comercio ilegal", 0}, {"Divulgacao", 0}, {"Nick improprio", 0},
     {"Money farm", 0}, {"Racismo", 0}, {"Gordofobia", 0}
 }
-local motivosKick = { {"RT / Bugado (solicitado)", 0}, {"Bugando evento", 0} }
+local motivosKick = { {"RT / Bugado", 0}, {"Bugando evento", 0} }
 
 local function normalizarMotivoPainel(valor)
     return tostring(valor or ""):upper():gsub("[^%w%s]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
@@ -643,22 +643,43 @@ local function paineltv_OnDrawFrame()
         return ok
     end
 
-    -- O chat do SA-MP pode permanecer aberto apenas para fornecer o cursor.
-    -- Ao clicar em um campo, devolve o foco ao ImGui sem fechar/desativar o chat.
+    -- T continua abrindo o chat normalmente. Ao clicar num campo, o teclado sai
+    -- do editbox do SA-MP e passa ao ImGui, mantendo somente o cursor nativo.
     local function manterFocoCampoPainel(campoId)
         campoId = tostring(campoId or "campo")
         if imgui.IsItemClicked and imgui.IsItemClicked() then
+            if type(sampIsChatInputActive) == "function"
+                and sampIsChatInputActive()
+                and type(sampSetChatInputEnabled) == "function" then
+                sampSetChatInputEnabled(false)
+            end
+            if type(sampToggleCursor) == "function" then
+                sampToggleCursor(true)
+            end
+            _G.HZPainelCursorNativo = true
             _G.HZPainelCampoFoco = campoId
-            _G.HZPainelCampoFocoFrames = 12
-            setCursor(true)
+            -- Dois frames bastam para concluir a transferencia sem selecionar
+            -- novamente o texto durante toda a digitacao.
+            _G.HZPainelCampoFocoFrames = 2
         end
-        -- O chat do SA-MP tenta recuperar o teclado logo depois do clique.
-        -- Reafirma o campo por poucos frames, sem fechar/desativar o chat.
+        -- A prioridade contra o chat permanece, mas o pedido de foco acontece
+        -- somente no inicio para nao selecionar o campo repetidamente.
         if _G.HZPainelCampoFoco == campoId
-            and (tonumber(_G.HZPainelCampoFocoFrames) or 0) > 0
-            and imgui.SetKeyboardFocusHere then
-            imgui.SetKeyboardFocusHere(-1)
-            _G.HZPainelCampoFocoFrames = _G.HZPainelCampoFocoFrames - 1
+            and _G.HZPainelCursorNativo then
+            if type(sampIsChatInputActive) == "function"
+                and sampIsChatInputActive()
+                and type(sampSetChatInputEnabled) == "function" then
+                sampSetChatInputEnabled(false)
+                if type(sampToggleCursor) == "function" then sampToggleCursor(true) end
+            end
+            local framesFoco = tonumber(_G.HZPainelCampoFocoFrames) or 0
+            if framesFoco > 0 then
+                local campoEstaAtivo = imgui.IsItemActive and imgui.IsItemActive()
+                if not campoEstaAtivo and imgui.SetKeyboardFocusHere then
+                    imgui.SetKeyboardFocusHere(-1)
+                end
+                _G.HZPainelCampoFocoFrames = framesFoco - 1
+            end
         end
     end
 
@@ -1141,6 +1162,21 @@ local function paineltv_OnDrawFrame()
     end
 
     alturaJanela = imgui.GetCursorPosY() + 12
+
+    -- Um clique fora da janela encerra o foco e devolve mouse/teclado ao jogo.
+    if _G.HZPainelCursorNativo and imgui.IsMouseClicked and imgui.IsMouseClicked(0) then
+        local mouse = imgui.GetMousePos()
+        local pos = imgui.GetWindowPos()
+        local size = imgui.GetWindowSize()
+        local dentro = mouse.x >= pos.x and mouse.x <= (pos.x + size.x)
+            and mouse.y >= pos.y and mouse.y <= (pos.y + size.y)
+        if not dentro then
+            if type(sampToggleCursor) == "function" then sampToggleCursor(false) end
+            _G.HZPainelCursorNativo = false
+            _G.HZPainelCampoFoco = nil
+            _G.HZPainelCampoFocoFrames = 0
+        end
+    end
     imgui.End()
 end
 
@@ -3368,10 +3404,26 @@ local WM_KEYUP_SELETOR = 0x0101
 local WM_SYSKEYUP_SELETOR = 0x0105
 
 local function setor_onWindowMessage(msg, wparam, lparam)
-    if seletorJogadorAberto.v then
-        local ehKeyDown = (msg == WM_KEYDOWN_SELETOR or msg == WM_SYSKEYDOWN_SELETOR)
-        local ehKeyUp = (msg == WM_KEYUP_SELETOR or msg == WM_SYSKEYUP_SELETOR)
+    local ehKeyDown = (msg == WM_KEYDOWN_SELETOR or msg == WM_SYSKEYDOWN_SELETOR)
+    local ehKeyUp = (msg == WM_KEYUP_SELETOR or msg == WM_SYSKEYUP_SELETOR)
 
+    -- ESC encerra o foco de texto do painel e devolve o controle ao jogo.
+    if _G.HZPainelCursorNativo and wparam == VK_ESCAPE_SELETOR and (ehKeyDown or ehKeyUp) then
+        if ehKeyDown then
+            if type(sampToggleCursor) == "function" then
+                sampToggleCursor(false)
+            end
+            _G.HZPainelCursorNativo = false
+            _G.HZPainelCampoFoco = nil
+            _G.HZPainelCampoFocoFrames = 0
+        end
+        if consumeWindowMessage then
+            consumeWindowMessage(true, true)
+        end
+        return false
+    end
+
+    if seletorJogadorAberto.v then
         local teclaSeletor =
             wparam == VK_ESCAPE_SELETOR or
             wparam == VK_RETURN_SELETOR or
@@ -6137,7 +6189,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.87",
+    versao = "1.96",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
