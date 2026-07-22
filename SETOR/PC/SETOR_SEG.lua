@@ -464,7 +464,7 @@ local motivosMute = {
 local motivosBan = {
     {"Cortar animacao", 15}, {"Handling", 5}, {"Animacao vantajosa", 5},
     {"Anti-RP extremo (10 dias)", 10}, {"Anti-RP extremo (15 dias)", 15},
-    {"Anti-RP extremo (20 dias)", 20}, {"Cheat / Mod proibido", 0}, {"Abuso de bug", 0},
+    {"Anti-RP extremo (20 dias)", 20}, {"Cheat", 0}, {"Abuso de bug", 0},
     {"Comercio ilegal", 0}, {"Divulgacao", 0}, {"Nick improprio", 0},
     {"Money farm", 0}, {"Racismo", 0}, {"Gordofobia", 0}
 }
@@ -6137,7 +6137,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.86",
+    versao = "1.87",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
