@@ -248,6 +248,7 @@ end
 
 -- Preferencias úteis do Painel TV (persistidas em hz_setor_config.json)
 local fecharPainelSempreTvoff = true
+local painelTvEscala = 1.0
 -- Comportamentos internos fixos: não precisam aparecer na configuração.
 local voltarPrincipalAoTrocarTelado = true
 local limparMotivoTempoAoTrocarTelado = true
@@ -298,6 +299,10 @@ local function carregarPreferenciasPainelTv()
     if data.painelTvFecharTvoff ~= nil then fecharPainelSempreTvoff = data.painelTvFecharTvoff == true end
     if data.painelTvConfirmarBan2x ~= nil then confirmarBanPermanente2x = data.painelTvConfirmarBan2x == true end
     if data.painelTvBloquearOffline ~= nil then bloquearAcoesSemIdTelado = data.painelTvBloquearOffline == true end
+    local escalaSalva = tonumber(data.painelTvEscala) or 1.0
+    if escalaSalva < 0.9 then painelTvEscala = 0.8
+    elseif escalaSalva > 1.1 then painelTvEscala = 1.2
+    else painelTvEscala = 1.0 end
 
     if data.painelTvAvisarStaffAtivo ~= nil then hotkeyAvisarStaffAtiva = data.painelTvAvisarStaffAtivo == true end
     hotkeyAvisarStaffIndice = normalizarIndiceHotkeyAviso(data.painelTvAvisarStaffTecla)
@@ -327,6 +332,7 @@ local function salvarPreferenciasPainelTv()
     data.painelTvConfirmarBan2x = confirmarBanPermanente2x == true
     data.painelTvBloquearOffline = bloquearAcoesSemIdTelado == true
     data.painelTvModoPunicao = modoPainel
+    data.painelTvEscala = painelTvEscala
 
     -- Limpa opções antigas que não existem mais na interface.
     data.painelTvVoltarPrincipal = nil
@@ -413,7 +419,7 @@ local tabelaTempos = {
     ["DB"] = 250, ["AB DESMANCHE"] = 250, ["KOS"] = 250,
     ["PG"] = 250, ["TK"] = 250, ["HK"] = 250, ["SLP"] = 250,
     ["INVASAO SEM AUTORIZACAO"] = 250, ["RDM"] = 250, ["RK"] = 250,
-    ["SPAM KILL"] = 250, ["CORRENDO SAFE"] = 250, ["COMBAT LOG"] = 250,
+    ["SPAM KILL"] = 250, ["CORRENDO SAFE"] = 250, ["CL"] = 300, ["COMBAT LOG"] = 300,
     ["CORRUPCAO"] = 300, ["DARK RP"] = 300
 }
 
@@ -429,6 +435,7 @@ local motivosCadeia = {
     {"DM - Matar sem motivo", 200, "Matar sem motivo"},
     {"DM - Ferir sem motivo", 200, "Ferir sem motivo"},
     {"Assalto loja irregular", 150}, {"Assalto banco irregular", 150},
+    {"Anti RP", 200, "Anti RP"},
     {"Anti-RP - Roubo de caixinha sobre veiculo", 200, "Roubo de caixinha sobre veiculo"},
     {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
@@ -445,7 +452,7 @@ local motivosCadeia = {
     {"RK - Vinganca apos morte", 250, "Vinganca apos morte"},
     {"Spam Kill - Abusando de interior", 250, "Abusando de interior"},
     {"Correndo safe em AB/Acao", 250},
-    {"Combat Log - Desconectou em acao", 250, "Desconectou em acao"},
+    {"CL - Desconectou em acao", 300, "Desconectou em acao"},
     {"Corrupcao", 300}, {"Dark RP", 300}
 }
 local motivosMute = {
@@ -576,7 +583,7 @@ end
 
 local function paineltv_OnDrawFrame()
     if not janela.v then return end
-    local escalaInterface = (_G.HZEscalaMods and _G.HZEscalaMods()) or 1.0
+    local escalaInterface = painelTvEscala or 1.0
     local function V(w, h)
         local function sv(n) return n > 0 and math.floor(n * escalaInterface + 0.5) or n end
         return imgui.ImVec2(sv(w), sv(h))
@@ -638,9 +645,20 @@ local function paineltv_OnDrawFrame()
 
     -- O chat do SA-MP pode permanecer aberto apenas para fornecer o cursor.
     -- Ao clicar em um campo, devolve o foco ao ImGui sem fechar/desativar o chat.
-    local function manterFocoCampoPainel()
-        if imgui.IsItemClicked and imgui.IsItemClicked() and imgui.SetKeyboardFocusHere then
+    local function manterFocoCampoPainel(campoId)
+        campoId = tostring(campoId or "campo")
+        if imgui.IsItemClicked and imgui.IsItemClicked() then
+            _G.HZPainelCampoFoco = campoId
+            _G.HZPainelCampoFocoFrames = 12
+            setCursor(true)
+        end
+        -- O chat do SA-MP tenta recuperar o teclado logo depois do clique.
+        -- Reafirma o campo por poucos frames, sem fechar/desativar o chat.
+        if _G.HZPainelCampoFoco == campoId
+            and (tonumber(_G.HZPainelCampoFocoFrames) or 0) > 0
+            and imgui.SetKeyboardFocusHere then
             imgui.SetKeyboardFocusHere(-1)
+            _G.HZPainelCampoFocoFrames = _G.HZPainelCampoFocoFrames - 1
         end
     end
 
@@ -652,10 +670,13 @@ local function paineltv_OnDrawFrame()
 
     local function fitWindowHeight()
         if menuAtual == "principal" then
-            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then return 505 end
-            return 430
+            local extraCompacto = painelTvEscala <= 0.81 and 26 or 0
+            if _G.HZMonitorEtapa1 and _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then return 505 + extraCompacto end
+            return 430 + extraCompacto
         end
-        if menuAtual == "config" then return 385 end
+        -- A configuracao ganhou a secao de tamanho; reserva espaco para o
+        -- botao VOLTAR sem depender da escala escolhida.
+        if menuAtual == "config" then return 425 end
         if menuAtual == "categorias" then return 295 end
         if menuAtual == "confirmar" then return 355 end
         if tostring(menuAtual):find("lista_") then return 330 end
@@ -682,7 +703,7 @@ local function paineltv_OnDrawFrame()
         end
     end
 
-    local H_BTN_MAIN = math.floor((modoCompacto and 30 or 34) * escalaInterface + 0.5)
+    local H_BTN_MAIN = modoCompacto and 30 or 34
     local H_CHILD_LIST = math.floor((modoCompacto and 142 or 165) * escalaInterface + 0.5)
 
     -- Topbar fixa, compacta, sem scroll
@@ -730,6 +751,24 @@ local function paineltv_OnDrawFrame()
 
         imgui.BeginChild("##hz_config", V(0, 275), true)
 
+        imgui.TextColored(C_LINE, u8"TAMANHO DO PAINEL")
+        imgui.TextColored(C_MUTED, u8("Atual: " .. math.floor(painelTvEscala * 100 + 0.5) .. "%"))
+        if hzButton(u8"80%", V(82, 28), painelTvEscala == 0.8 and C_PRIMARY or C_DARKBTN, C_HOVER, C_ACTIVE) then
+            painelTvEscala = 0.8
+            salvarPreferenciasPainelTv()
+        end
+        imgui.SameLine()
+        if hzButton(u8"100%", V(82, 28), painelTvEscala == 1.0 and C_PRIMARY or C_DARKBTN, C_HOVER, C_ACTIVE) then
+            painelTvEscala = 1.0
+            salvarPreferenciasPainelTv()
+        end
+        imgui.SameLine()
+        if hzButton(u8"120%", V(-1, 28), painelTvEscala == 1.2 and C_PRIMARY or C_DARKBTN, C_HOVER, C_ACTIVE) then
+            painelTvEscala = 1.2
+            salvarPreferenciasPainelTv()
+        end
+        imgui.Spacing()
+        imgui.Separator()
         imgui.TextColored(C_LINE, u8"COMPORTAMENTO")
         imgui.Spacing()
 
@@ -817,7 +856,7 @@ local function paineltv_OnDrawFrame()
 
     elseif menuAtual == "principal" then
         -- Card compacto do jogador em 2 linhas
-        imgui.BeginChild("##hz_player_card", V(0, 62), true)
+        imgui.BeginChild("##hz_player_card", V(0, painelTvEscala <= 0.81 and 88 or 62), true)
         imgui.SetCursorPosY(9)
 
         -- Linha 1: NICK à esquerda | ONLINE/OFFLINE à direita
@@ -850,11 +889,17 @@ local function paineltv_OnDrawFrame()
         imgui.SameLine()
         imgui.TextColored(C_TEXT, u8(levelTelado))
 
-        imgui.SameLine()
-        local xTv = imgui.GetWindowWidth() - 92
-        if xTv > imgui.GetCursorPosX() then imgui.SetCursorPosX(xTv) end
-        if hzButton(u8"TV OFF", V(76, 24), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
-            sampSendChat("/tvoff")
+        if painelTvEscala <= 0.81 then
+            if hzButton(u8"TV OFF", V(-1, 24), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+                sampSendChat("/tvoff")
+            end
+        else
+            imgui.SameLine()
+            local xTv = imgui.GetWindowWidth() - 92
+            if xTv > imgui.GetCursorPosX() then imgui.SetCursorPosX(xTv) end
+            if hzButton(u8"TV OFF", V(76, 24), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+                sampSendChat("/tvoff")
+            end
         end
         imgui.EndChild()
 
@@ -876,7 +921,7 @@ local function paineltv_OnDrawFrame()
             if _G.HZMonitorEtapa1.motivoAberto and _G.HZMonitorEtapa1.motivoAberto.v then
                 imgui.PushItemWidth(-1)
                 imgui.InputText(u8"##motivo_monitoramento", _G.HZMonitorEtapa1.motivoBuffer)
-                manterFocoCampoPainel()
+                manterFocoCampoPainel("monitoramento")
                 imgui.PopItemWidth()
                 imgui.TextColored(C_MUTED, u8"Informe o motivo do monitoramento")
 
@@ -896,9 +941,11 @@ local function paineltv_OnDrawFrame()
             valorStatus.v = math.max(0, valorStatus.v - 10)
         end
         imgui.SameLine()
-        imgui.PushItemWidth(54)
+        -- O campo precisa acompanhar a escala; largura fixa empurrava VIDA e
+        -- COLETE para fora no modo 80%.
+        imgui.PushItemWidth(math.floor(54 * escalaInterface + 0.5))
         imgui.InputInt("##val", valorStatus, 0, 0)
-        manterFocoCampoPainel()
+        manterFocoCampoPainel("vida_colete")
         imgui.PopItemWidth()
         imgui.SameLine(0, 2)
         if hzButton(u8"+", V(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
@@ -962,7 +1009,7 @@ local function paineltv_OnDrawFrame()
         if modoPainel == 1 then
             imgui.PushItemWidth(-1)
             imgui.InputText(u8"Pesquisar", pesquisa)
-            manterFocoCampoPainel()
+            manterFocoCampoPainel("pesquisa")
             imgui.PopItemWidth()
             local lista = (menuAtual == "lista_cadeia" and motivosCadeia) or (menuAtual == "lista_mute" and motivosMute) or (menuAtual == "lista_ban" and motivosBan) or motivosKick
             imgui.BeginChild("sc", V(0, H_CHILD_LIST / escalaInterface), true)
@@ -985,7 +1032,7 @@ local function paineltv_OnDrawFrame()
             imgui.TextColored(C_MUTED, u8("Motivo Manual (" .. labelPunicao .. ")"))
             imgui.PushItemWidth(-1)
             local motivoManualAlterado = imgui.InputText("##mman", bufMotivoManual)
-            manterFocoCampoPainel()
+            manterFocoCampoPainel("motivo_manual")
             if motivoManualAlterado then
                 local motUpper = bufMotivoManual.v:upper()
                 local listaAtual = (comandoBase == "/punicao" and motivosCadeia)
@@ -1016,7 +1063,7 @@ local function paineltv_OnDrawFrame()
                 imgui.TextColored(C_MUTED, comandoBase == "/punicao" and u8"Tempo (Minutos)" or u8"Tempo (Dias)")
                 imgui.PushItemWidth(-1)
                 imgui.InputInt("##tman", tempoPunicao)
-                manterFocoCampoPainel()
+                manterFocoCampoPainel("tempo_manual")
                 imgui.PopItemWidth()
             end
             if hzButton(u8"PROSSEGUIR", imgui.ImVec2(-1, H_BTN_MAIN), C_PRIMARY, C_HOVER, C_ACTIVE) then
@@ -1055,7 +1102,7 @@ local function paineltv_OnDrawFrame()
         if comandoBase ~= "/kick" then
             local txt = (comandoBase == "/ban" or comandoBase == "/mute") and u8"DIAS" or u8"TEMPO"
             imgui.InputInt(txt, tempoPunicao)
-            manterFocoCampoPainel()
+            manterFocoCampoPainel("tempo_confirmacao")
         end
         imgui.EndChild()
 
@@ -6090,7 +6137,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.76",
+    versao = "1.86",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
