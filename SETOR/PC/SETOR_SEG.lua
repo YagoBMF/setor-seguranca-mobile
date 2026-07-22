@@ -8,16 +8,9 @@ do
 -- integrado: script_author removido
 require "lib.moonloader"
 local imgui = require "imgui"
--- mimgui fica desativado por padrao porque algumas combinacoes de GTA/ASI
--- fecham o jogo apenas ao inicializar o backend. A ativacao e explicitamente
--- registrada por um marcador; sem ele, /mods usa o painel compativel.
-_G.HZMimguiMarcador = getWorkingDirectory() .. "\\config\\hz_mimgui.enable"
-_G.HZMimguiAtivado = doesFileExist(_G.HZMimguiMarcador)
-if _G.HZMimguiAtivado then
-    _G.HZMimguiOk, _G.HZMimgui = pcall(require, "mimgui")
-else
-    _G.HZMimguiOk, _G.HZMimgui = false, nil
-end
+-- Uma unica interface compativel evita diferencas entre PCs e MoonLoaders.
+_G.HZMimguiOk, _G.HZMimgui = false, nil
+_G.HZMimguiAtivado, _G.HZMimguiRecuperado = false, false
 local encoding = require "encoding"
 encoding.default = "CP1252"
 u8 = encoding.UTF8
@@ -575,18 +568,27 @@ local function paineltv_OnInitialize()
     local ranges = ffi.new("ImWchar[3]", 0x0020, 0x2FFF, 0)
 
     fontIcons = io.Fonts:AddFontFromFileTTF("C:\\Windows\\Fonts\\seguisym.ttf", 16.0, nil, ranges)
+    -- Fontes reais para os tres perfis. Evita distorcer a mesma fonte no Lite.
+    _G.HZFonteInterfaceCompacta = io.Fonts:AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 11.0, nil, ranges)
+    _G.HZFonteInterfaceNormal = io.Fonts:AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 14.0, nil, ranges)
+    _G.HZFonteInterfaceGrande = io.Fonts:AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 17.0, nil, ranges)
 end
 
 local function paineltv_OnDrawFrame()
     if not janela.v then return end
+    local escalaInterface = (_G.HZEscalaMods and _G.HZEscalaMods()) or 1.0
+    local function V(w, h)
+        local function sv(n) return n > 0 and math.floor(n * escalaInterface + 0.5) or n end
+        return imgui.ImVec2(sv(w), sv(h))
+    end
 
     local style = imgui.GetStyle()
     style.WindowRounding = 7.0
     style.FrameRounding = 5.0
     style.ChildWindowRounding = 7.0
-    style.WindowPadding = imgui.ImVec2(10, 9)
-    style.ItemSpacing = imgui.ImVec2(6, 5)
-    style.FramePadding = imgui.ImVec2(8, 4)
+    style.WindowPadding = V(10, 9)
+    style.ItemSpacing = V(6, 5)
+    style.FramePadding = V(8, 4)
 
     local C_BG       = imgui.ImVec4(0.025, 0.035, 0.050, 0.94)
     local C_PANEL    = imgui.ImVec4(0.045, 0.065, 0.090, 0.95)
@@ -660,7 +662,7 @@ local function paineltv_OnDrawFrame()
         return alturaJanela
     end
 
-    imgui.SetNextWindowSize(imgui.ImVec2(340, fitWindowHeight()), imgui.Cond.Always)
+    imgui.SetNextWindowSize(V(340, fitWindowHeight()), imgui.Cond.Always)
     if not painelTvPosCarregada then
         if painelTvX ~= nil and painelTvY ~= nil then
             imgui.SetNextWindowPos(imgui.ImVec2(painelTvX, painelTvY), imgui.Cond.Always)
@@ -669,6 +671,7 @@ local function paineltv_OnDrawFrame()
     end
 
     imgui.Begin(u8"Setor Seguranca", janela, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoTitleBar)
+    if imgui.SetWindowFontScale then imgui.SetWindowFontScale(escalaInterface) end
 
     do
         local pos = imgui.GetWindowPos()
@@ -679,11 +682,11 @@ local function paineltv_OnDrawFrame()
         end
     end
 
-    local H_BTN_MAIN = modoCompacto and 30 or 34
-    local H_CHILD_LIST = modoCompacto and 142 or 165
+    local H_BTN_MAIN = math.floor((modoCompacto and 30 or 34) * escalaInterface + 0.5)
+    local H_CHILD_LIST = math.floor((modoCompacto and 142 or 165) * escalaInterface + 0.5)
 
     -- Topbar fixa, compacta, sem scroll
-    imgui.BeginChild("##hz_topbar", imgui.ImVec2(0, 38), true)
+    imgui.BeginChild("##hz_topbar", V(0, 38), true)
     imgui.SetCursorPosY(9)
     imgui.TextColored(C_LINE, u8"SETOR SEGURANCA")
     imgui.SameLine()
@@ -697,7 +700,7 @@ local function paineltv_OnDrawFrame()
     imgui.SetCursorPosY(7)
 
     if fontIcons ~= nil then imgui.PushFont(fontIcons) end
-    if hzButton(ICON_GEAR, imgui.ImVec2(btnW, btnH), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+    if hzButton(ICON_GEAR, V(btnW, btnH), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
         if menuAtual ~= "config" then
             menuAnterior = menuAtual
             menuAtual = "config"
@@ -710,7 +713,7 @@ local function paineltv_OnDrawFrame()
     if fontIcons ~= nil then imgui.PopFont() end
 
     imgui.SameLine()
-    if hzButton(u8"X", imgui.ImVec2(btnW, btnH), imgui.ImVec4(0.100, 0.040, 0.055, 0.95), C_DANGER, C_DANGER_H) then
+    if hzButton(u8"X", V(btnW, btnH), imgui.ImVec4(0.100, 0.040, 0.055, 0.95), C_DANGER, C_DANGER_H) then
         salvarPosPainelTv(true)
         janela.v = false
         menuAtual = "principal"
@@ -725,7 +728,7 @@ local function paineltv_OnDrawFrame()
         imgui.TextColored(C_MUTED, u8"Ajustes do painel")
         imgui.Separator()
 
-        imgui.BeginChild("##hz_config", imgui.ImVec2(0, 275), true)
+        imgui.BeginChild("##hz_config", V(0, 275), true)
 
         imgui.TextColored(C_LINE, u8"COMPORTAMENTO")
         imgui.Spacing()
@@ -775,14 +778,14 @@ local function paineltv_OnDrawFrame()
         end
 
         hotkeyAvisarStaffIndice = normalizarIndiceHotkeyAviso(hotkeyAvisarStaffIndice)
-        if hzButton(u8"<", imgui.ImVec2(38,28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8"<", V(38,28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             hotkeyAvisarStaffIndice = normalizarIndiceHotkeyAviso(hotkeyAvisarStaffIndice-1)
             salvarPreferenciasPainelTv()
         end
         imgui.SameLine()
-        hzButton(u8("Tecla: "..hotkeysAvisarStaff[hotkeyAvisarStaffIndice].nome), imgui.ImVec2(190,28), C_CARD, C_HOVER, C_ACTIVE)
+        hzButton(u8("Tecla: "..hotkeysAvisarStaff[hotkeyAvisarStaffIndice].nome), V(190,28), C_CARD, C_HOVER, C_ACTIVE)
         imgui.SameLine()
-        if hzButton(u8">", imgui.ImVec2(-1,28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8">", V(-1,28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             hotkeyAvisarStaffIndice = normalizarIndiceHotkeyAviso(hotkeyAvisarStaffIndice+1)
             salvarPreferenciasPainelTv()
         end
@@ -807,14 +810,14 @@ local function paineltv_OnDrawFrame()
         imgui.TextColored(C_MUTED, u8"A escolha fica salva automaticamente.")
         imgui.EndChild()
 
-        if hzButton(u8"VOLTAR", imgui.ImVec2(-1, 30), C_PRIMARY, C_HOVER, C_ACTIVE) then
+        if hzButton(u8"VOLTAR", V(-1, 30), C_PRIMARY, C_HOVER, C_ACTIVE) then
             menuAtual = menuAnterior
             aguardandoConfirmBanPerm = false
         end
 
     elseif menuAtual == "principal" then
         -- Card compacto do jogador em 2 linhas
-        imgui.BeginChild("##hz_player_card", imgui.ImVec2(0, 62), true)
+        imgui.BeginChild("##hz_player_card", V(0, 62), true)
         imgui.SetCursorPosY(9)
 
         -- Linha 1: NICK à esquerda | ONLINE/OFFLINE à direita
@@ -850,17 +853,17 @@ local function paineltv_OnDrawFrame()
         imgui.SameLine()
         local xTv = imgui.GetWindowWidth() - 92
         if xTv > imgui.GetCursorPosX() then imgui.SetCursorPosX(xTv) end
-        if hzButton(u8"TV OFF", imgui.ImVec2(76, 24), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8"TV OFF", V(76, 24), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             sampSendChat("/tvoff")
         end
         imgui.EndChild()
 
         sectionTitle("ACOES RAPIDAS")
-        if hzButton(u8"PUNICAO", imgui.ImVec2(-1, 36), C_DANGER, C_DANGER_H, C_DANGER) then menuAtual = "categorias" end
-        if hzButton(u8"PRENDER ARMAS", imgui.ImVec2(-1, 36), imgui.ImVec4(0.520, 0.085, 0.090, 0.88), C_DANGER_H, C_DANGER) then
+        if hzButton(u8"PUNICAO", V(-1, 36), C_DANGER, C_DANGER_H, C_DANGER) then menuAtual = "categorias" end
+        if hzButton(u8"PRENDER ARMAS", V(-1, 36), imgui.ImVec4(0.520, 0.085, 0.090, 0.88), C_DANGER_H, C_DANGER) then
             if podeExecutarAcao() then sampSendChat("/prenderarmas " .. rgTelado) end
         end
-        if hzButton(u8"CHECAR JOGADOR", imgui.ImVec2(-1, 36), C_PRIMARY, C_HOVER, C_ACTIVE) then
+        if hzButton(u8"CHECAR JOGADOR", V(-1, 36), C_PRIMARY, C_HOVER, C_ACTIVE) then
             if podeExecutarAcao() then sampSendChat("/checar " .. rgTelado) end
         end
         -- Monitoramento discreto por caixa de selecao.
@@ -877,19 +880,19 @@ local function paineltv_OnDrawFrame()
                 imgui.PopItemWidth()
                 imgui.TextColored(C_MUTED, u8"Informe o motivo do monitoramento")
 
-                if hzButton(u8"SALVAR MONITORAMENTO", imgui.ImVec2(205, 30), C_BLUE, C_BLUE_H, C_BLUE) then
+                if hzButton(u8"SALVAR MONITORAMENTO", V(205, 30), C_BLUE, C_BLUE_H, C_BLUE) then
                     _G.HZMonitorEtapa1.salvarMotivoPainel()
                 end
                 imgui.SameLine()
-                if hzButton(u8"CANCELAR", imgui.ImVec2(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+                if hzButton(u8"CANCELAR", V(-1, 30), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
                     _G.HZMonitorEtapa1.cancelarMotivoPainel()
                 end
             end
         end
 
         sectionTitle("VIDA / COLETE")
-        imgui.BeginChild("##hz_status", imgui.ImVec2(0, 58), true)
-        if hzButton(u8"-", imgui.ImVec2(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
+        imgui.BeginChild("##hz_status", V(0, 58), true)
+        if hzButton(u8"-", V(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
             valorStatus.v = math.max(0, valorStatus.v - 10)
         end
         imgui.SameLine()
@@ -898,15 +901,15 @@ local function paineltv_OnDrawFrame()
         manterFocoCampoPainel()
         imgui.PopItemWidth()
         imgui.SameLine(0, 2)
-        if hzButton(u8"+", imgui.ImVec2(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
+        if hzButton(u8"+", V(36, 30), C_BLUE, C_BLUE_H, C_BLUE) then
             valorStatus.v = math.min(999, valorStatus.v + 10)
         end
         imgui.SameLine()
-        if hzButton(u8"VIDA", imgui.ImVec2(72, 30), C_DANGER, C_DANGER_H, C_DANGER) then
+        if hzButton(u8"VIDA", V(72, 30), C_DANGER, C_DANGER_H, C_DANGER) then
             if podeExecutarAcao() then sampSendChat("/setvida " .. rgTelado .. " " .. valorStatus.v) end
         end
         imgui.SameLine()
-        if hzButton(u8"COLETE", imgui.ImVec2(82, 30), C_BLUE, C_BLUE_H, C_BLUE) then
+        if hzButton(u8"COLETE", V(82, 30), C_BLUE, C_BLUE_H, C_BLUE) then
             if podeExecutarAcao() then sampSendChat("/setcolete " .. rgTelado .. " " .. valorStatus.v) end
         end
         imgui.EndChild()
@@ -917,7 +920,7 @@ local function paineltv_OnDrawFrame()
 
         imgui.Spacing()
         imgui.Separator()
-        imgui.BeginChild("##hz_relogio_tv", imgui.ImVec2(0, 20), false)
+        imgui.BeginChild("##hz_relogio_tv", V(0, 20), false)
         local txtSize = imgui.CalcTextSize(u8(relogioTxt))
         local posXRelogio = (imgui.GetWindowWidth() - txtSize.x) / 2
         if posXRelogio < 0 then posXRelogio = 0 end
@@ -937,7 +940,7 @@ local function paineltv_OnDrawFrame()
             {"KICK", "lista_kick", "/kick", "KICK"}
         }
         for _, c in ipairs(cats) do
-            if hzButton(u8(c[1]), imgui.ImVec2(-1, modoCompacto and 30 or 34), C_CARD, C_HOVER, C_ACTIVE) then
+            if hzButton(u8(c[1]), V(-1, modoCompacto and 30 or 34), C_CARD, C_HOVER, C_ACTIVE) then
                 menuAtual = c[2]
                 comandoBase = c[3]
                 labelPunicao = c[4]
@@ -947,7 +950,7 @@ local function paineltv_OnDrawFrame()
                 aguardandoConfirmBanPerm = false
             end
         end
-        if hzButton(u8"VOLTAR", imgui.ImVec2(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8"VOLTAR", V(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             menuAtual = "principal"
             aguardandoConfirmBanPerm = false
         end
@@ -962,10 +965,10 @@ local function paineltv_OnDrawFrame()
             manterFocoCampoPainel()
             imgui.PopItemWidth()
             local lista = (menuAtual == "lista_cadeia" and motivosCadeia) or (menuAtual == "lista_mute" and motivosMute) or (menuAtual == "lista_ban" and motivosBan) or motivosKick
-            imgui.BeginChild("sc", imgui.ImVec2(0, H_CHILD_LIST), true)
+            imgui.BeginChild("sc", V(0, H_CHILD_LIST / escalaInterface), true)
             for _, v in ipairs(lista) do
                 if v[1]:lower():find(pesquisa.v:lower()) then
-                    if hzButton(u8(v[1] .. "  |  " .. tostring(v[2])), imgui.ImVec2(-1, 27), C_CARD, C_HOVER, C_ACTIVE) then
+                    if hzButton(u8(v[1] .. "  |  " .. tostring(v[2])), V(-1, 27), C_CARD, C_HOVER, C_ACTIVE) then
                         motivoSel = v[3] or v[1]
                         if comandoBase == "/punicao" then
                             tempoPunicao.v = tempoCadeiaPorLevel(v[3] or v[1], v[2])
@@ -1005,7 +1008,7 @@ local function paineltv_OnDrawFrame()
                 end
             end
             imgui.PopItemWidth()
-            if hzButton(u8"ESCOLHER NA TABELA", imgui.ImVec2(-1, 28), C_CARD, C_HOVER, C_ACTIVE) then
+            if hzButton(u8"ESCOLHER NA TABELA", V(-1, 28), C_CARD, C_HOVER, C_ACTIVE) then
                 modoPainel = 1
                 salvarPreferenciasPainelTv()
             end
@@ -1022,7 +1025,7 @@ local function paineltv_OnDrawFrame()
                 aguardandoConfirmBanPerm = false
             end
         end
-        if hzButton(u8"VOLTAR", imgui.ImVec2(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8"VOLTAR", V(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             menuAtual = "categorias"
             bufMotivoManual.v = ""
             tempoPunicao.v = 0
@@ -1037,7 +1040,7 @@ local function paineltv_OnDrawFrame()
         imgui.TextColored(C_LINE, u8("CONFIRMAR " .. statusLabel))
         imgui.TextColored(C_MUTED, u8"Confira antes de aplicar")
         imgui.Separator()
-        imgui.BeginChild("##hz_confirm", imgui.ImVec2(0, 136), true)
+        imgui.BeginChild("##hz_confirm", V(0, 136), true)
         if comandoBase == "/mute" then
             imgui.TextColored(C_MUTED, u8("RG: " .. rgTelado .. "   |   ID: " .. idTelado))
         else
@@ -1060,7 +1063,7 @@ local function paineltv_OnDrawFrame()
         local textoBtn = u8"CONFIRMAR PUNICAO"
         if precisa2x and not aguardandoConfirmBanPerm then textoBtn = u8"CONFIRMAR (2x)" elseif precisa2x and aguardandoConfirmBanPerm then textoBtn = u8"CONFIRMAR AGORA" end
 
-        if hzButton(textoBtn, imgui.ImVec2(-1, 40), C_DANGER, C_DANGER_H, C_DANGER) then
+        if hzButton(textoBtn, V(-1, 40), C_DANGER, C_DANGER_H, C_DANGER) then
             if not podeExecutarAcao() then
             else
                 if precisa2x and not aguardandoConfirmBanPerm then
@@ -1083,7 +1086,7 @@ local function paineltv_OnDrawFrame()
                 end
             end
         end
-        if hzButton(u8"CANCELAR", imgui.ImVec2(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
+        if hzButton(u8"CANCELAR", V(-1, 28), C_DARKBTN, C_PRIMARY, C_ACTIVE) then
             menuAtual = "principal"
             bufMotivoManual.v = ""
             aguardandoConfirmBanPerm = false
@@ -1319,6 +1322,7 @@ local configSistema = {
     modsX = 360,
     modsY = 180,
     modsModoSeguro = false,
+    modsEscala = 1.0,
     modulos = {
         painel_tv = true,
         navegacao_tv = true,
@@ -1479,6 +1483,10 @@ local function aplicarConfigSistema()
     tvNovatosAtivo = false
     tvTodosAtivo = false
     v_altura_tapa = tostring(configSistema.v_altura_tapa or v_altura_tapa or "1")
+    -- O /mods agora usa dialogo nativo; a escala antiga nao deve encolher
+    -- Painel TV, atendimento, monitoramento ou seletores.
+    configSistema.modsEscala = 1.0
+    configSistema.modsModoSeguro = true
 end
 
 local function salvarConfigSistema(forcar)
@@ -3584,6 +3592,190 @@ _G.HZModulosUI = {
     { "automacoes_staff", "AUTOMACOES STAFF", "Rotinas automaticas da staff." }
 }
 
+function _G.HZEscalaMods()
+    return tonumber(configSistema.modsEscala) or 1.0
+end
+
+function _G.HZTamanhoMods(valor)
+    return math.floor((tonumber(valor) or 0) * _G.HZEscalaMods() + 0.5)
+end
+
+function _G.HZNomeEscalaMods()
+    local escala = _G.HZEscalaMods()
+    return tostring(math.floor(escala * 100 + 0.5)) .. "%"
+end
+
+function _G.HZDefinirEscalaMods(valor)
+    valor = tonumber(valor) or 1.0
+    if valor < 0.875 then valor = 0.75
+    elseif valor > 1.125 then valor = 1.25
+    else valor = 1.0 end
+    configSistema.modsEscala = valor
+    _G.HZModsTamanhoCarregado = false
+    _G.HZModsTamanhoCarregadoMimgui = false
+    _G.HZModsUltimoTamanho = nil
+    _G.HZModsUltimoTamanhoMimgui = nil
+    salvarConfigSistema(true)
+end
+
+function _G.HZDesenharEscalaModsImgui()
+    imgui.TextColored(UI_HZ.muted, "TAMANHO DA INTERFACE: " .. _G.HZNomeEscalaMods())
+    if imgui.Button("COMPACTO##mods_esc_c", imgui.ImVec2(_G.HZTamanhoMods(78), _G.HZTamanhoMods(28))) then _G.HZDefinirEscalaMods(0.75) end
+    imgui.SameLine()
+    if imgui.Button("NORMAL##mods_esc_n", imgui.ImVec2(_G.HZTamanhoMods(72), _G.HZTamanhoMods(28))) then _G.HZDefinirEscalaMods(1.0) end
+    imgui.SameLine()
+    if imgui.Button("GRANDE##mods_esc_g", imgui.ImVec2(_G.HZTamanhoMods(72), _G.HZTamanhoMods(28))) then _G.HZDefinirEscalaMods(1.25) end
+end
+
+function _G.HZConfirmarModoFull()
+    if not _G.HZMimguiOk then return end
+    if doesFileExist(_G.HZMimguiTesteMarcador) or doesFileExist(_G.HZMimguiTesteIniciado) then
+        os.remove(_G.HZMimguiTesteMarcador)
+        os.remove(_G.HZMimguiTesteIniciado)
+        local arquivoOk = io.open(_G.HZMimguiConfirmado, "w+")
+        if arquivoOk then arquivoOk:write("ok"); arquivoOk:close() end
+    end
+end
+
+function _G.HZModoInterfaceAtual()
+    if _G.HZMimguiOk and configSistema.modsModoSeguro ~= true then return "FULL (mimgui)" end
+    return "LITE (ImGui compativel)"
+end
+
+function _G.HZAtivarModoLite()
+    os.remove(_G.HZMimguiMarcador)
+    os.remove(_G.HZMimguiTesteMarcador)
+    os.remove(_G.HZMimguiTesteIniciado)
+    configSistema.modsModoSeguro = true
+    salvarConfigSistema(true)
+    _G.HZFecharPainelMods()
+    sampAddChatMessage("{3EDC81}[MODS] Modo LITE selecionado. Reinicie o GTA.", -1)
+end
+
+function _G.HZAtivarModoFull(auto)
+    local pastaConfig = getWorkingDirectory() .. "\\config"
+    if not doesDirectoryExist(pastaConfig) then createDirectory(pastaConfig) end
+    os.remove(_G.HZMimguiTesteIniciado)
+    local enable = io.open(_G.HZMimguiMarcador, "w+")
+    local teste = io.open(_G.HZMimguiTesteMarcador, "w+")
+    if not enable or not teste then
+        if enable then enable:close() end
+        if teste then teste:close() end
+        return sampAddChatMessage("{FF5555}[MODS] Nao foi possivel preparar o modo Full.", -1)
+    end
+    enable:write("enabled"); enable:close()
+    teste:write(auto and "auto" or "full"); teste:close()
+    configSistema.modsModoSeguro = false
+    salvarConfigSistema(true)
+    _G.HZFecharPainelMods()
+    sampAddChatMessage("{FFC857}[MODS] Teste FULL preparado. Reinicie o GTA.", -1)
+    sampAddChatMessage("{A8B5C8}[MODS] Se o teste falhar, a proxima abertura voltara ao LITE.", -1)
+end
+
+_G.HZDialogComandosId = 28991
+_G.HZDialogModsId = 28992
+_G.HZModsCategorias = {
+    { "PAINEIS", "Painel TV, atendimento e monitoramento.", { "painel_tv", "atendimento", "monitoramento" } },
+    { "NAVEGACAO", "Atalhos para navegar entre jogadores.", { "navegacao_tv" } },
+    { "FERRAMENTAS", "Camera e rotinas automaticas da staff.", { "camera_staff", "automacoes_staff" } }
+}
+
+function _G.HZAbrirModsDialog(tela)
+    tela = tela or "CATEGORIAS"
+    _G.HZModsDialogTela = tela
+    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+    local okId, meuId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    local meuNome = okId and tostring(sampGetPlayerNickname(meuId) or "Staff") or "Staff"
+    local linhas = {}
+    _G.HZModsDialogItens = {}
+    local botao1, botao2 = "ABRIR", "FECHAR"
+    if tela == "CATEGORIAS" then
+        for _, categoria in ipairs(_G.HZModsCategorias) do
+            local ativos = 0
+            for _, moduloId in ipairs(categoria[3]) do
+                if _G.HZModuloAtivo(moduloId) then ativos = ativos + 1 end
+            end
+            linhas[#linhas + 1] = string.format("{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s",
+                categoria[1], ativos, #categoria[3], categoria[2])
+            _G.HZModsDialogItens[#_G.HZModsDialogItens + 1] = categoria
+        end
+    else
+        botao1, botao2 = "ALTERAR", "VOLTAR"
+        local idsCategoria
+        for _, categoria in ipairs(_G.HZModsCategorias) do
+            if categoria[1] == tela then idsCategoria = categoria[3] break end
+        end
+        for _, moduloId in ipairs(idsCategoria or {}) do
+            for _, item in ipairs(_G.HZModulosUI) do
+                if item[1] == moduloId then
+                    local permitido, ativo = _G.HZTemPermissaoModulo(moduloId), _G.HZModuloAtivo(moduloId)
+                    local estado, cor
+                    if not permitido then estado, cor = "BLOQUEADO", "{FF6B6B}"
+                    elseif ativo then estado, cor = "ATIVO", "{3EDC81}"
+                    else estado, cor = "DESATIVADO", "{FFB347}" end
+                    linhas[#linhas + 1] = string.format("{FFFFFF}%s  %s[%s]{A8B5C8} - %s",
+                        item[2], cor, estado, item[3])
+                    _G.HZModsDialogItens[#_G.HZModsDialogItens + 1] = item
+                    break
+                end
+            end
+        end
+    end
+    sampShowDialog(
+        _G.HZDialogModsId,
+        "SETOR ADVANCED | " .. tela .. " | " .. meuNome .. " - " .. tostring(cargoNome),
+        table.concat(linhas, "\n"),
+        botao1, botao2, 2
+    )
+    -- Dialogos locais nao geram onSendDialogResponse. Marcamos este como
+    -- respondivel e cancelamos o RPC no callback antes de chegar ao servidor.
+    if type(sampSetDialogClientside) == "function" then
+        sampSetDialogClientside(false)
+    end
+end
+function _G.HZAbrirSetorComandos()
+    local texto = table.concat({
+        "{48C6FF}PAINEL E MODULOS",
+        "{FFFFFF}/mods {A8B5C8}- Abre ou fecha a central de modulos.",
+        "{FFFFFF}/setorcomandos {A8B5C8}- Abre esta janela de ajuda.",
+        "{FFFFFF}/tvz {A8B5C8}- Abre ou fecha manualmente o Painel TV.",
+        "{FFFFFF}/kj {A8B5C8}- Liga ou desliga o cursor do Painel TV.",
+        "",
+        "{48C6FF}NAVEGACAO TV",
+        "{FFFFFF}/hz1 {A8B5C8}- Ativa novatos nas setas cima/baixo e todos nas laterais.",
+        "{FFFFFF}/hz0 {A8B5C8}- Desativa a navegacao pelas setas.",
+        "{FFFFFF}/tvhist {A8B5C8}- Mostra o historico das navegacoes.",
+        "",
+        "{48C6FF}MONITORAMENTO",
+        "{FFFFFF}/ass RG motivo {A8B5C8}- Adiciona um jogador aos monitorados.",
+        "{FFFFFF}/rss RG {A8B5C8}- Remove um jogador dos monitorados.",
+        "{FFFFFF}/ss {A8B5C8}- Abre a janela de jogadores monitorados.",
+        "",
+        "{48C6FF}CACHE DE RG",
+        "{FFFFFF}/rgatual {A8B5C8}- Mostra o jogador telado e o RG atual.",
+        "{FFFFFF}/rgnome Nome {A8B5C8}- Procura um RG pelo nome.",
+        "{FFFFFF}/rgcache {A8B5C8}- Mostra quantos RGs estao salvos.",
+        "{FFFFFF}/rgdel RG {A8B5C8}- Remove um RG salvo.",
+        "{FFFFFF}/rgdedup {A8B5C8}- Corrige nomes duplicados no cache.",
+        "",
+        "{48C6FF}CAMERA STAFF",
+        "{FFFFFF}/hz {A8B5C8}- Ativa ou desativa a camera livre.",
+        "{FFFFFF}/hzstaff {A8B5C8}- Alterna o modo de camera staff.",
+        "{FFFFFF}/map {A8B5C8}- Teleporta discretamente para a camera.",
+        "{FFFFFF}/mapp {A8B5C8}- Retorna para a posicao anterior.",
+        "",
+        "{48C6FF}CONFIGURACAO",
+        "{FFFFFF}/painelpos X Y {A8B5C8}- Define a posicao do atendimento.",
+        "{FFFFFF}/painelreset {A8B5C8}- Restaura as posicoes dos paineis.",
+        "",
+        "{48C6FF}ATUALIZACAO",
+        "{FFFFFF}/setorversao {A8B5C8}- Mostra a versao instalada.",
+        "{FFFFFF}/setoratualizar {A8B5C8}- Forca a atualizacao pelo GitHub.",
+        "{FFFFFF}/setorrollback {A8B5C8}- Restaura o ultimo backup."
+    }, "\n")
+    sampShowDialog(_G.HZDialogComandosId, "SETOR ADVANCED - GUIA DE COMANDOS", texto, "FECHAR", "", 2)
+end
+
 function _G.HZFecharPainelMods()
     salvarConfigSistema(true)
     _G.HZModsJanela.v = false
@@ -3637,8 +3829,13 @@ end
 -- evitando chamadas de desenho que podem fechar o GTA sem gerar traceback.
 function _G.HZDesenharPainelModsCompat()
     if not _G.HZModsJanela.v then return end
+    local escala = _G.HZEscalaMods()
+    local function S(n) return math.floor((tonumber(n) or 0) * escala + 0.5) end
     local pushedColors, pushedVars = uiApplyWindowTheme()
-    imgui.SetNextWindowSize(imgui.ImVec2(540, 500), imgui.Cond.Always)
+    if not _G.HZModsTamanhoCarregado then
+        imgui.SetNextWindowSize(imgui.ImVec2(S(720), S(540)), imgui.Cond.Always)
+        _G.HZModsTamanhoCarregado = true
+    end
     if not _G.HZModsPosCarregada then
         imgui.SetNextWindowPos(imgui.ImVec2(
             tonumber(configSistema.modsX) or 360,
@@ -3650,8 +3847,14 @@ function _G.HZDesenharPainelModsCompat()
     if imgui.WindowFlags then
         if imgui.WindowFlags.NoResize then flags = flags + imgui.WindowFlags.NoResize end
         if imgui.WindowFlags.NoCollapse then flags = flags + imgui.WindowFlags.NoCollapse end
+        if imgui.WindowFlags.NoTitleBar then flags = flags + imgui.WindowFlags.NoTitleBar end
     end
-    imgui.Begin("SETOR ADVANCED - MODULOS (COMPATIVEL)", _G.HZModsJanela, flags)
+    imgui.Begin("SETOR ADVANCED - MODULOS LITE##mods_lite", _G.HZModsJanela, flags)
+    local baseFonteEscala = escala < 0.875 and 0.75 or (escala > 1.125 and 1.25 or 1.0)
+    local fonte = baseFonteEscala == 0.75 and _G.HZFonteInterfaceCompacta
+        or (baseFonteEscala == 1.25 and _G.HZFonteInterfaceGrande or _G.HZFonteInterfaceNormal)
+    if fonte then imgui.PushFont(fonte) end
+    if imgui.SetWindowFontScale then imgui.SetWindowFontScale(escala / baseFonteEscala) end
     local pos = imgui.GetWindowPos()
     if pos then
         configSistema.modsX = math.floor(pos.x)
@@ -3662,28 +3865,84 @@ function _G.HZDesenharPainelModsCompat()
     local okId, meuId = sampGetPlayerIdByCharHandle(PLAYER_PED)
     local meuNome = okId and tostring(sampGetPlayerNickname(meuId) or "Staff") or "Staff"
     local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
-    imgui.TextColored(UI_HZ.glow, "SETOR ADVANCED  |  /MODS")
-    imgui.TextColored(UI_HZ.text, meuNome .. "  -  " .. cargoNome)
-    imgui.TextColored(UI_HZ.muted, "Modo compativel com MoonLoader 0.26.x")
+
+    -- Cabecalho proprio: segue a escala, ao contrario da barra nativa do Windows.
+    imgui.BeginChild("##mods_lite_header", imgui.ImVec2(0, S(52)), true)
+    imgui.TextColored(UI_HZ.glow, "SETOR ADVANCED")
+    imgui.SameLine()
+    imgui.TextColored(UI_HZ.muted, "CENTRAL ADMINISTRATIVA  /MODS")
+    imgui.SameLine()
+    imgui.SetCursorPosX(imgui.GetWindowWidth() - S(42))
+    if imgui.Button("X##mods_lite_x", imgui.ImVec2(S(30), S(27))) then _G.HZFecharPainelMods() end
+    imgui.TextColored(UI_HZ.muted, "TAMANHO: " .. _G.HZNomeEscalaMods())
+    imgui.EndChild()
+
+    imgui.BeginChild("##mods_lite_corpo", imgui.ImVec2(0, S(410)), false)
+    imgui.BeginChild("##mods_lite_sidebar", imgui.ImVec2(S(174), 0), true)
+    for _, pagina in ipairs({"GERAL", "PAINEIS", "FERRAMENTAS"}) do
+        local selecionada = _G.HZModsPagina == pagina
+        if selecionada then imgui.PushStyleColor(imgui.Col.Button, UI_HZ.primary) end
+        if imgui.Button((selecionada and ">  " or "   ") .. pagina .. "##lite_pag_" .. pagina,
+            imgui.ImVec2(-1, S(34))) then _G.HZModsPagina = pagina end
+        if selecionada then imgui.PopStyleColor() end
+    end
+    imgui.Spacing()
     imgui.Separator()
-    imgui.BeginChild("##mods_compat_lista", imgui.ImVec2(0, 385), true)
-    for i, item in ipairs(_G.HZModulosUI) do
-        local id, titulo, descricao = item[1], item[2], item[3]
-        local valor = imgui.ImBool(_G.HZModuloAtivo(id))
-        if imgui.Checkbox(titulo .. "##compat_" .. id, valor) then
-            _G.HZDefinirModulo(id, valor.v)
+    imgui.TextColored(UI_HZ.muted, "ESCALA")
+    if imgui.Button("75%##lite_75", imgui.ImVec2(-1, S(28))) then _G.HZDefinirEscalaMods(0.75) end
+    if imgui.Button("100%##lite_100", imgui.ImVec2(-1, S(28))) then _G.HZDefinirEscalaMods(1.0) end
+    if imgui.Button("125%##lite_125", imgui.ImVec2(-1, S(28))) then _G.HZDefinirEscalaMods(1.25) end
+    imgui.Spacing()
+    imgui.Separator()
+    imgui.TextColored(UI_HZ.muted, "STAFF")
+    imgui.TextColored(UI_HZ.text, meuNome)
+    imgui.TextColored(UI_HZ.glow, cargoNome)
+    imgui.EndChild()
+
+    imgui.SameLine()
+    imgui.BeginChild("##mods_lite_conteudo", imgui.ImVec2(0, 0), true)
+    imgui.TextColored(UI_HZ.glow, "CENTRAL DE CONTROLE")
+    imgui.TextColored(UI_HZ.text, _G.HZModsPagina)
+    imgui.TextColored(UI_HZ.muted, "Clique no cartao para alternar a funcao.")
+    imgui.Separator()
+
+    local visiveis = {}
+    for _, item in ipairs(_G.HZModulosUI) do
+        local id = item[1]
+        if _G.HZModsPagina == "GERAL"
+            or (_G.HZModsPagina == "PAINEIS" and
+                (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
+            or (_G.HZModsPagina == "FERRAMENTAS" and
+                (id == "camera_staff" or id == "automacoes_staff")) then
+            visiveis[#visiveis + 1] = item
         end
-        imgui.SameLine()
+    end
+
+    local umaColuna = escala < 0.95
+    for i, item in ipairs(visiveis) do
+        local id, titulo, descricao = item[1], item[2], item[3]
         local permitido = _G.HZTemPermissaoModulo(id)
-        local estado = permitido and (_G.HZModuloAtivo(id) and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
-        imgui.TextColored(_G.HZModuloAtivo(id) and UI_HZ.green or UI_HZ.muted, estado)
-        imgui.TextColored(UI_HZ.muted, descricao)
-        if i < #_G.HZModulosUI then imgui.Separator() end
+        local ativo = _G.HZModuloAtivo(id)
+        local estado = permitido and (ativo and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
+        local largura = umaColuna and -1 or S(245)
+        local texto = titulo .. "\n" .. estado .. "\n" .. descricao .. "##lite_card_" .. id
+        if ativo then imgui.PushStyleColor(imgui.Col.Button, UI_HZ.primary) end
+        if imgui.Button(texto, imgui.ImVec2(largura, S(82))) and permitido then
+            _G.HZDefinirModulo(id, not ativo)
+        end
+        if ativo then imgui.PopStyleColor() end
+        if not umaColuna and i % 2 == 1 and i < #visiveis then imgui.SameLine() end
     end
     imgui.EndChild()
-    if imgui.Button("FECHAR", imgui.ImVec2(150, 32)) then
+    imgui.EndChild()
+
+    imgui.Separator()
+    if imgui.Button("FECHAR PAINEL", imgui.ImVec2(S(170), S(32))) then
         _G.HZFecharPainelMods()
     end
+    imgui.SameLine()
+    imgui.TextColored(UI_HZ.muted, "SALVAMENTO AUTOMATICO ATIVO  |  " .. _G.HZNomeEscalaMods())
+    if fonte then imgui.PopFont() end
     imgui.End()
     uiEndWindowTheme(pushedColors, pushedVars)
     if not _G.HZModsJanela.v then _G.HZFecharPainelMods() end
@@ -3691,6 +3950,8 @@ end
 
 function _G.HZDesenharPainelMods()
     if not _G.HZModsJanela.v then return end
+    if true then return _G.HZDesenharPainelModsCompat() end
+    -- Codigo antigo mantido abaixo apenas para facilitar recuperacao historica.
     local versaoMoonLoader = tonumber(getMoonloaderVersion and getMoonloaderVersion() or 26) or 26
     -- Quando disponivel, o painel principal e renderizado exclusivamente pelo
     -- callback do mimgui. Nao desenhar a mesma janela no ImGui antigo.
@@ -3888,8 +4149,13 @@ end
 function _G.HZDesenharPainelModsMimgui()
     if not _G.HZMimguiOk or not _G.HZModsJanela.v then return end
     local mi = _G.HZMimgui
-    local flags = mi.WindowFlags.NoResize + mi.WindowFlags.NoCollapse
-    mi.SetNextWindowSize(mi.ImVec2(760, 520), mi.Cond.Always)
+    local flags = mi.WindowFlags.NoResize + mi.WindowFlags.NoCollapse + mi.WindowFlags.NoTitleBar
+    local escala = _G.HZEscalaMods()
+    local function ms(valor) return math.floor((tonumber(valor) or 0) * escala + 0.5) end
+    if not _G.HZModsTamanhoCarregadoMimgui then
+        mi.SetNextWindowSize(mi.ImVec2(ms(760), ms(520)), mi.Cond.Always)
+        _G.HZModsTamanhoCarregadoMimgui = true
+    end
     if not _G.HZModsPosCarregadaMimgui then
         mi.SetNextWindowPos(mi.ImVec2(
             tonumber(configSistema.modsX) or 360,
@@ -3899,9 +4165,11 @@ function _G.HZDesenharPainelModsMimgui()
     end
 
     -- mimgui 1.7.x separa variantes float e ImVec2 desta funcao.
-    mi.PushStyleVarFloat(mi.StyleVar.WindowRounding, 10)
-    mi.PushStyleVarFloat(mi.StyleVar.FrameRounding, 7)
-    mi.PushStyleVarVec2(mi.StyleVar.ItemSpacing, mi.ImVec2(9, 8))
+    mi.PushStyleVarFloat(mi.StyleVar.WindowRounding, ms(10))
+    mi.PushStyleVarFloat(mi.StyleVar.FrameRounding, ms(7))
+    mi.PushStyleVarVec2(mi.StyleVar.WindowPadding, mi.ImVec2(ms(10), ms(9)))
+    mi.PushStyleVarVec2(mi.StyleVar.FramePadding, mi.ImVec2(ms(8), ms(4)))
+    mi.PushStyleVarVec2(mi.StyleVar.ItemSpacing, mi.ImVec2(ms(9), ms(8)))
     mi.PushStyleColor(mi.Col.WindowBg, mi.ImVec4(0.015, 0.025, 0.045, 0.98))
     mi.PushStyleColor(mi.Col.ChildBg, mi.ImVec4(0.025, 0.045, 0.075, 0.96))
     mi.PushStyleColor(mi.Col.Border, mi.ImVec4(0.08, 0.55, 0.78, 0.65))
@@ -3910,6 +4178,7 @@ function _G.HZDesenharPainelModsMimgui()
     mi.PushStyleColor(mi.Col.ButtonActive, mi.ImVec4(0.02, 0.52, 0.76, 1.00))
 
     mi.Begin("SETOR ADVANCED  |  /MODS##mimgui", nil, flags)
+    if mi.SetWindowFontScale then mi.SetWindowFontScale(escala) end
     local pos = mi.GetWindowPos()
     if pos and (math.abs((tonumber(configSistema.modsX) or 0) - pos.x) > 1
         or math.abs((tonumber(configSistema.modsY) or 0) - pos.y) > 1) then
@@ -3918,24 +4187,41 @@ function _G.HZDesenharPainelModsMimgui()
         salvarConfigSistema(false)
     end
 
+    mi.BeginChild("##mods_mi_header", mi.ImVec2(0, ms(52)), true)
     mi.TextColored(mi.ImVec4(0.15, 0.72, 1.00, 1.00), "SETOR ADVANCED")
     mi.SameLine()
-    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00), "CENTRAL ADMINISTRATIVA")
-    mi.Separator()
+    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00), "CENTRAL ADMINISTRATIVA  /MODS")
+    mi.SameLine()
+    mi.SetCursorPosX(mi.GetWindowWidth() - ms(42))
+    if mi.Button("X##mi_full_x", mi.ImVec2(ms(30), ms(27))) then _G.HZFecharPainelMods() end
+    mi.TextColored(mi.ImVec4(0.40, 0.82, 1.00, 1.00), "MODO ATUAL: " .. _G.HZModoInterfaceAtual())
+    mi.EndChild()
 
-    mi.BeginChild("##mods_mi_sidebar", mi.ImVec2(180, 420), true)
+    mi.BeginChild("##mods_mi_corpo", mi.ImVec2(0, ms(410)), false)
+    mi.BeginChild("##mods_mi_sidebar", mi.ImVec2(ms(180), 0), true)
     for _, pagina in ipairs({ "GERAL", "PAINEIS", "FERRAMENTAS" }) do
         local paginaSelecionada = _G.HZModsPagina == pagina
         if paginaSelecionada then
             mi.PushStyleColor(mi.Col.Button, mi.ImVec4(0.02, 0.48, 0.70, 1.00))
         end
         if mi.Button((paginaSelecionada and ">  " or "   ") .. pagina .. "##mi_" .. pagina,
-            mi.ImVec2(155, 38)) then
+            mi.ImVec2(ms(155), ms(38))) then
             _G.HZModsPagina = pagina
         end
         if paginaSelecionada then mi.PopStyleColor() end
     end
     mi.Spacing()
+    mi.Separator()
+    mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00), "INTERFACE")
+    if mi.Button("-##mi_esc_menos", mi.ImVec2(ms(34), ms(27))) then
+        _G.HZDefinirEscalaMods(escala > 1.05 and 1.0 or 0.75)
+    end
+    mi.SameLine()
+    mi.Text(_G.HZNomeEscalaMods())
+    mi.SameLine()
+    if mi.Button("+##mi_esc_mais", mi.ImVec2(ms(34), ms(27))) then
+        _G.HZDefinirEscalaMods(escala < 0.95 and 1.0 or 1.25)
+    end
     mi.Separator()
     local okStaffId, staffId = sampGetPlayerIdByCharHandle(PLAYER_PED)
     local staffNome = okStaffId and tostring(sampGetPlayerNickname(staffId) or "Staff") or "Staff"
@@ -3946,7 +4232,7 @@ function _G.HZDesenharPainelModsMimgui()
     mi.EndChild()
 
     mi.SameLine()
-    mi.BeginChild("##mods_mi_conteudo", mi.ImVec2(0, 420), true)
+    mi.BeginChild("##mods_mi_conteudo", mi.ImVec2(0, 0), true)
     mi.TextColored(mi.ImVec4(0.15, 0.72, 1.00, 1.00), "CENTRAL DE CONTROLE")
     mi.Text(_G.HZModsPagina)
     mi.TextColored(mi.ImVec4(0.62, 0.70, 0.80, 1.00),
@@ -3976,25 +4262,38 @@ function _G.HZDesenharPainelModsMimgui()
         end
         local estado = permitido and (ativo and "ATIVO" or "DESATIVADO") or "BLOQUEADO"
         local texto = titulo .. "\n" .. estado .. "\n" .. descricao .. "##mi_card_" .. id
-        if mi.Button(texto, mi.ImVec2(258, 92)) and permitido then
+        local umaColuna = escala < 0.95
+        local larguraCard = umaColuna and -1 or ms(258)
+        if mi.Button(texto, mi.ImVec2(larguraCard, ms(92))) and permitido then
             if _G.HZDefinirModulo(id, not ativo) then
                 sampAddChatMessage((not ativo and "{3EDC81}[MODS] Ativado: " or
                     "{FF6B6B}[MODS] Desativado: ") .. titulo, -1)
             end
         end
         if ativo or not permitido then mi.PopStyleColor() end
-        if i % 2 == 1 and i < #visiveis then mi.SameLine() end
+        if not umaColuna and i % 2 == 1 and i < #visiveis then mi.SameLine() end
     end
     mi.EndChild()
+    mi.EndChild()
 
-    if mi.Button("FECHAR PAINEL", mi.ImVec2(180, 35)) then
+    if mi.Button("FECHAR PAINEL", mi.ImVec2(ms(180), ms(35))) then
         _G.HZFecharPainelMods()
     end
     mi.SameLine()
     mi.TextColored(mi.ImVec4(0.48, 0.58, 0.70, 1.00), "SALVAMENTO AUTOMATICO ATIVO  |  MIMGUI")
+    local tamJanela = mi.GetWindowSize()
+    mi.SetCursorPos(mi.ImVec2(tamJanela.x - ms(34), tamJanela.y - ms(32)))
+    mi.Button(">>##mods_full_resize", mi.ImVec2(ms(26), ms(24)))
+    if mi.IsItemActive() then
+        local mouse = mi.GetMousePos()
+        local novaEscala = math.max(0.65, math.min(1.40, (mouse.x - pos.x) / 760))
+        mi.SetWindowSize(mi.ImVec2(760 * novaEscala, 520 * novaEscala), mi.Cond.Always)
+        configSistema.modsEscala = novaEscala
+        salvarConfigSistema(false)
+    end
     mi.End()
     mi.PopStyleColor(6)
-    mi.PopStyleVar(3)
+    mi.PopStyleVar(5)
 end
 
 if _G.HZMimguiOk then
@@ -4011,6 +4310,8 @@ if _G.HZMimguiOk then
                 salvarConfigSistema(true)
                 print("[SETOR /MODS] Falha no mimgui: " .. tostring(erroPainel))
                 sampAddChatMessage("{FFC857}[MODS] Falha visual detectada. Modo seguro ativado; use /mods novamente.", -1)
+            else
+                _G.HZConfirmarModoFull()
             end
         end
     )
@@ -4137,7 +4438,7 @@ function _G.HZMonitorPanel.desenhar()
     if not _G.HZMonitorPanel.aberto.v then return end
 
     local pushedColors, pushedVars = uiApplyWindowTheme()
-    imgui.SetNextWindowSize(imgui.ImVec2(455, 425), imgui.Cond.Always)
+    imgui.SetNextWindowSize(imgui.ImVec2(_G.HZTamanhoMods(455), _G.HZTamanhoMods(425)), imgui.Cond.Always)
     if not _G.HZMonitorPanel.posCarregada then
         imgui.SetNextWindowPos(imgui.ImVec2(_G.HZMonitorPanel.x, _G.HZMonitorPanel.y), imgui.Cond.Always)
         _G.HZMonitorPanel.posCarregada = true
@@ -4152,6 +4453,7 @@ function _G.HZMonitorPanel.desenhar()
     end
 
     imgui.Begin("SETOR SEGURANCA - MONITORADOS", _G.HZMonitorPanel.aberto, flags)
+    if imgui.SetWindowFontScale then imgui.SetWindowFontScale(_G.HZEscalaMods()) end
     local pos = imgui.GetWindowPos()
     if pos then
         _G.HZMonitorPanel.x, _G.HZMonitorPanel.y = pos.x, pos.y
@@ -4189,7 +4491,7 @@ function _G.HZMonitorPanel.desenhar()
     table.sort(lista, function(a, b) return tostring(a.info.nick or ""):lower() < tostring(b.info.nick or ""):lower() end)
 
     uiTextColor(UI_HZ.primary2, "MONITORADOS ENCONTRADOS: " .. tostring(#lista))
-    imgui.BeginChild("##monitorados_scroll", imgui.ImVec2(0, 270), true)
+    imgui.BeginChild("##monitorados_scroll", imgui.ImVec2(0, _G.HZTamanhoMods(270)), true)
 
     if #lista == 0 then
         uiTextColor(UI_HZ.danger, "Nenhum jogador monitorado encontrado.")
@@ -4205,15 +4507,15 @@ function _G.HZMonitorPanel.desenhar()
             uiTextColor(UI_HZ.muted, "Motivo: " .. tostring(info.motivo or "Nao informado"))
 
             if idOnline then
-                if imgui.Button("TV##mon_tv_" .. i, imgui.ImVec2(85, 28)) then sampSendChat("/tv " .. rg) end
+                if imgui.Button("TV##mon_tv_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then sampSendChat("/tv " .. rg) end
                 imgui.SameLine()
-                if imgui.Button("IR##mon_ir_" .. i, imgui.ImVec2(85, 28)) then sampSendChat("/ir " .. rg) end
+                if imgui.Button("IR##mon_ir_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then sampSendChat("/ir " .. rg) end
                 imgui.SameLine()
             end
 
             local larguraAcao = idOnline and 105 or 205
 
-            if imgui.Button("TELAGEM##mon_copy_" .. i, imgui.ImVec2(larguraAcao, 28)) then
+            if imgui.Button("TELAGEM##mon_copy_" .. i, imgui.ImVec2(larguraAcao, _G.HZTamanhoMods(28))) then
                 _G.HZMonitorPanel.copiarTelagem(rg, info, nick)
             end
             imgui.SameLine()
@@ -4224,7 +4526,7 @@ function _G.HZMonitorPanel.desenhar()
                 pushedRemove = pushedRemove + uiPushColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.95, 0.20, 0.26, 1.00))
                 pushedRemove = pushedRemove + uiPushColor(imgui.Col.ButtonActive, imgui.ImVec4(0.65, 0.08, 0.12, 1.00))
             end
-            if imgui.Button("REMOVER##mon_rm_" .. i, imgui.ImVec2(larguraAcao, 28)) then
+            if imgui.Button("REMOVER##mon_rm_" .. i, imgui.ImVec2(larguraAcao, _G.HZTamanhoMods(28))) then
                 _G.HZMonitorPanel.remover(rg)
             end
             uiPopColor(pushedRemove)
@@ -4233,7 +4535,7 @@ function _G.HZMonitorPanel.desenhar()
     end
 
     imgui.EndChild()
-    if imgui.Button("FECHAR", imgui.ImVec2(140, 30)) then
+    if imgui.Button("FECHAR", imgui.ImVec2(_G.HZTamanhoMods(140), _G.HZTamanhoMods(30))) then
         _G.HZMonitorPanel.fechar()
     end
 
@@ -4252,7 +4554,7 @@ local function setor_OnDrawFrame()
     if seletorJogadorAberto.v then
         local pushedColors, pushedVars = uiApplyWindowTheme()
 
-        imgui.SetNextWindowSize(imgui.ImVec2(455, 425), imgui.Cond.Always)
+        imgui.SetNextWindowSize(imgui.ImVec2(_G.HZTamanhoMods(455), _G.HZTamanhoMods(425)), imgui.Cond.Always)
 
         if not seletorPosCarregada then
             imgui.SetNextWindowPos(imgui.ImVec2(tonumber(configSistema.seletorX) or 300, tonumber(configSistema.seletorY) or 220), imgui.Cond.Always)
@@ -4267,6 +4569,7 @@ local function setor_OnDrawFrame()
         end
 
         imgui.Begin("SETOR SEGURANCA - PLAYER SELECT", seletorJogadorAberto, seletorFlags)
+        if imgui.SetWindowFontScale then imgui.SetWindowFontScale(_G.HZEscalaMods()) end
 
         do
             local pos = imgui.GetWindowPos()
@@ -4321,7 +4624,7 @@ local function setor_OnDrawFrame()
             imgui.Separator()
 
             -- Lista com rolagem própria. Quando navegar pelas setas, a janela acompanha o item selecionado.
-            imgui.BeginChild("##lista_jogadores_scroll", imgui.ImVec2(0, 235), true)
+            imgui.BeginChild("##lista_jogadores_scroll", imgui.ImVec2(0, _G.HZTamanhoMods(235)), true)
 
             for i, p in ipairs(seletorJogadorOpcoes) do
                 local nick = tostring(p.nick or "Desconhecido")
@@ -4406,56 +4709,18 @@ local function setor_main()
         "{00FF00}[SETOR] Versao " .. tostring(_G.HZUpdaterPC.versao) .. " Ativa! Desenvolvido por Respected",
         -1
     )
-
     sampRegisterChatCommand("mods", function()
         if not _G.HZStaffLogada then
             _G.HZFecharPainelMods()
             sampAddChatMessage("{FF6B6B}[MODS] Entre na staff para acessar os modulos.", -1)
             return
         end
-        if _G.HZModsJanela.v then
-            _G.HZFecharPainelMods()
-        else
-            _G.HZModsJanela.v = true
-            imgui.Process = true
-        end
-        if _G.HZModsJanela.v and _G.HZMimguiAtivado and not _G.HZMimguiOk
-            and configSistema.modsModoSeguro ~= true then
-            sampAddChatMessage("{FFC857}[MODS] mimgui nao encontrado. Painel compativel ativado.", -1)
-            sampAddChatMessage("{A8B5C8}[MODS] Instale o mimgui para usar o novo design.", -1)
-        end
-        sampAddChatMessage(_G.HZModsJanela.v and "{48C6FF}[MODS] Central de modulos aberta." or "{A8B5C8}[MODS] Central de modulos fechada.", -1)
+        _G.HZFecharPainelMods()
+        _G.HZAbrirModsDialog()
     end)
 
-    sampRegisterChatCommand("modsseguro", function()
-        configSistema.modsModoSeguro = not (configSistema.modsModoSeguro == true)
-        _G.HZFecharPainelMods()
-        salvarConfigSistema(true)
-        if configSistema.modsModoSeguro then
-            sampAddChatMessage("{3EDC81}[MODS] Modo seguro ativado. Agora use /mods.", -1)
-        else
-            sampAddChatMessage("{48C6FF}[MODS] Painel avancado reativado. Agora use /mods.", -1)
-        end
-    end)
-
-    sampRegisterChatCommand("modsmimgui", function()
-        _G.HZFecharPainelMods()
-        if doesFileExist(_G.HZMimguiMarcador) then
-            os.remove(_G.HZMimguiMarcador)
-            sampAddChatMessage("{3EDC81}[MODS] mimgui desativado. Reinicie o GTA para usar o painel seguro.", -1)
-            return
-        end
-        local pastaConfig = getWorkingDirectory() .. "\\config"
-        if not doesDirectoryExist(pastaConfig) then createDirectory(pastaConfig) end
-        local arquivo = io.open(_G.HZMimguiMarcador, "w+")
-        if not arquivo then
-            sampAddChatMessage("{FF5555}[MODS] Nao foi possivel habilitar o mimgui nesta instalacao.", -1)
-            return
-        end
-        arquivo:write("enabled")
-        arquivo:close()
-        sampAddChatMessage("{FFC857}[MODS] mimgui habilitado. Reinicie o GTA para testar.", -1)
-        sampAddChatMessage("{A8B5C8}[MODS] Se houver crash, apague config\\hz_mimgui.enable.", -1)
+    sampRegisterChatCommand("setorcomandos", function()
+        _G.HZAbrirSetorComandos()
     end)
 
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
@@ -5767,10 +6032,12 @@ end
 function desenharPainelVisual()
     local x = tonumber(configSistema.painelAtendimentoX) or 20
     local y = tonumber(configSistema.painelAtendimentoY) or 630
+    local escala = (_G.HZEscalaMods and _G.HZEscalaMods()) or 1.0
+    local function S(n) return math.floor(n * escala + 0.5) end
 
     -- Painel visual redesenhado no tema Horizonte.
     -- Apenas renderizacao; nao altera nenhuma regra de atendimento.
-    local w, h = 235, 96
+    local w, h = S(235), S(96)
     x, y = atualizarArrastePainelAtendimento(x, y, w, h)
     local bg = 0xDD11151D
     local bg2 = 0xAA1A1F2B
@@ -5781,31 +6048,31 @@ function desenharPainelVisual()
     local yellow = 0xFFFFC857
 
     renderDrawBox(x, y, w, h, bg)
-    renderDrawBox(x, y, 4, h, jogadorCaiu and red or cyanGlow)
-    renderDrawBox(x, y, w, 22, bg2)
-    renderDrawBox(x, y + 22, w, 1, jogadorCaiu and red or cyan)
-    renderDrawBox(x + 8, y + h - 8, w - 16, 2, jogadorCaiu and red or cyan)
+    renderDrawBox(x, y, S(4), h, jogadorCaiu and red or cyanGlow)
+    renderDrawBox(x, y, w, S(22), bg2)
+    renderDrawBox(x, y + S(22), w, S(1), jogadorCaiu and red or cyan)
+    renderDrawBox(x + S(8), y + h - S(8), w - S(16), S(2), jogadorCaiu and red or cyan)
 
     if jogadorCaiu then
-        renderFontDrawText(fonteTitulo, "{E74C5B}SETOR SEGURANCA", x + 12, y + 5, 0xFFFFFFFF)
-        renderFontDrawText(fonteAvisoSaida, "{FFFFFF}JOGADOR DESCONECTADO", x + 12, y + 30, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{A8B5C8}Nick: {FFFFFF}" .. nickJogadorAtendido, x + 12, y + 50, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{A8B5C8}Tempo: {FFC857}" .. tempoFinalCongelado, x + 12, y + 68, 0xFFFFFFFF)
+        renderFontDrawText(fonteTitulo, "{E74C5B}SETOR SEGURANCA", x + S(12), y + S(5), 0xFFFFFFFF)
+        renderFontDrawText(fonteAvisoSaida, "{FFFFFF}JOGADOR DESCONECTADO", x + S(12), y + S(30), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{A8B5C8}Nick: {FFFFFF}" .. nickJogadorAtendido, x + S(12), y + S(50), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{A8B5C8}Tempo: {FFC857}" .. tempoFinalCongelado, x + S(12), y + S(68), 0xFFFFFFFF)
     else
         local dur = os.difftime(os.time(), tempoInicio)
         local tempo = string.format("%02d:%02d", math.floor(dur / 60), dur % 60)
 
-        renderFontDrawText(fonteTitulo, "{48C6FF}SUPORTE", x + 12, y + 5, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{3EDC81}ATIVO", x + 132, y + 6, 0xFFFFFFFF)
+        renderFontDrawText(fonteTitulo, "{48C6FF}SUPORTE", x + S(12), y + S(5), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{3EDC81}ATIVO", x + S(132), y + S(6), 0xFFFFFFFF)
 
-        renderFontDrawText(fontePrincipal, "{A8B5C8}Jogador", x + 12, y + 31, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{FFFFFF}" .. nickJogadorAtendido, x + 72, y + 31, 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{A8B5C8}Jogador", x + S(12), y + S(31), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{FFFFFF}" .. nickJogadorAtendido, x + S(72), y + S(31), 0xFFFFFFFF)
 
-        renderFontDrawText(fontePrincipal, "{A8B5C8}RG", x + 12, y + 50, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{FFFFFF}" .. idJogadorAtendido, x + 72, y + 50, 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{A8B5C8}RG", x + S(12), y + S(50), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{FFFFFF}" .. idJogadorAtendido, x + S(72), y + S(50), 0xFFFFFFFF)
 
-        renderFontDrawText(fontePrincipal, "{A8B5C8}Tempo", x + 12, y + 69, 0xFFFFFFFF)
-        renderFontDrawText(fontePrincipal, "{FFC857}" .. tempo, x + 72, y + 69, 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{A8B5C8}Tempo", x + S(12), y + S(69), 0xFFFFFFFF)
+        renderFontDrawText(fontePrincipal, "{FFC857}" .. tempo, x + S(72), y + S(69), 0xFFFFFFFF)
     end
 end
 
@@ -5823,7 +6090,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.59",
+    versao = "1.76",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
@@ -6040,7 +6307,52 @@ function samp.onShowDialog(id, style, title, button1, button2, text)
     end
 end
 
-function samp.onSendDialogResponse(id, button, listboxId, input)
+function sampev.onSendDialogResponse(id, button, listboxId, input)
+    if tonumber(id) == tonumber(_G.HZDialogComandosId) then
+        return false
+    end
+    if tonumber(id) == tonumber(_G.HZDialogModsId) then
+        local confirmou = button == true or button == 1 or tostring(button) == "1"
+        if confirmou then
+            local indiceSelecionado = tonumber(listboxId)
+            local item = indiceSelecionado and (_G.HZModsDialogItens or {})[indiceSelecionado + 1] or nil
+            if item then
+                if _G.HZModsDialogTela == "CATEGORIAS" then
+                    local categoria = item[1]
+                    lua_thread.create(function()
+                        wait(100)
+                        if _G.HZStaffLogada then _G.HZAbrirModsDialog(categoria) end
+                    end)
+                    return false
+                end
+                local moduloId, titulo = item[1], item[2]
+                if _G.HZTemPermissaoModulo(moduloId) then
+                    local novoEstado = not _G.HZModuloAtivo(moduloId)
+                    if _G.HZDefinirModulo(moduloId, novoEstado) then
+                        sampAddChatMessage(
+                            (novoEstado and "{3EDC81}[MODS] Ativado: " or "{FFB347}[MODS] Desativado: ") .. titulo,
+                            -1
+                        )
+                    end
+                else
+                    local _, cargoNome = _G.HZNivelCargo(cargoAdmin)
+                    sampAddChatMessage("{FF6B6B}[MODS] " .. titulo .. " bloqueado para " .. cargoNome .. ".", -1)
+                end
+            else
+                sampAddChatMessage("{FFB347}[MODS] Selecione uma funcao antes de clicar em ALTERAR.", -1)
+            end
+            lua_thread.create(function()
+                wait(100)
+                if _G.HZStaffLogada then _G.HZAbrirModsDialog(_G.HZModsDialogTela) end
+            end)
+        elseif _G.HZModsDialogTela ~= "CATEGORIAS" then
+            lua_thread.create(function()
+                wait(100)
+                if _G.HZStaffLogada then _G.HZAbrirModsDialog("CATEGORIAS") end
+            end)
+        end
+        return false
+    end
     if _G.HZAvisosAC and _G.HZAvisosAC.responderDialogo then
         _G.HZAvisosAC.responderDialogo(id, button)
     end
