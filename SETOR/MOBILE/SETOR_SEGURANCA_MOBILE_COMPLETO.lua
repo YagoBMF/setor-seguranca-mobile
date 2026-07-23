@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.30'
+local VERSION = '3.31'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -106,6 +106,12 @@ end
 local SACIARME_INTERVALO = 15 * 60
 local SACIARME_PRIMEIRO_ATRASO = 30
 local saciarmeProximo = 0
+
+local function prepararAberturaReports()
+    reportDialogId, aguardandoReport = -2, false
+    reportDialogTexto = ''
+    reportAte = (os.clock and os.clock() or 0) + 60
+end
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -717,6 +723,7 @@ local function instalarPainelTvMimgui()
                 local nivel = nivelCargo(cfg.dados.cargo)
                 if nivel >= 2 then
                     if mimgui.Button('/REPORTS', mimgui.ImVec2(112, 38)) then
+                        prepararAberturaReports()
                         sampSendChat('/reports')
                     end
                     mimgui.SameLine()
@@ -1539,22 +1546,31 @@ end
 
 function samp.onShowDialog(dialogId, style, title, button1, button2, text)
     local agora = os.clock and os.clock() or 0
-    if reportDialogId == -2 and agora <= reportAte then
+    local tituloLimpo = clean(title):lower()
+    local ehListaReports = tituloLimpo:find('report', 1, true)
+        or tituloLimpo:find('denuncia', 1, true)
+    if (reportDialogId == -2 and agora <= reportAte)
+        or (staffLogada and ehListaReports) then
         reportDialogId = tonumber(dialogId) or -1
         reportDialogTexto = tostring(text or '')
+        reportAte = agora + 60
     end
 end
 
-function samp.onSendDialogResponse(dialogId, button, listboxId, input)
+local function processarRespostaReport(dialogId, button, listboxId, input)
     if tonumber(dialogId) == tonumber(reportDialogId) then
         reportDialogId = -1
         aguardandoReport = tonumber(button) == 1
         reportAte = aguardandoReport and ((os.clock and os.clock() or 0) + 15) or 0
         if aguardandoReport then
             painelTvFlutuante = true
-            local indice, linhaEscolhida = 0, nil
+            local indice, linhaEscolhida = 0, trim(input)
+            if linhaEscolhida == '' then linhaEscolhida = nil end
             for linha in tostring(reportDialogTexto or ''):gmatch('[^\r\n]+') do
-                if indice == (tonumber(listboxId) or -1) then linhaEscolhida = clean(linha) break end
+                if not linhaEscolhida and indice == (tonumber(listboxId) or -1) then
+                    linhaEscolhida = clean(linha)
+                    break
+                end
                 indice = indice + 1
             end
             if linhaEscolhida then
@@ -1564,14 +1580,34 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
                     nickAtual = tostring(sampGetPlayerNickname(idLinha) or nomeLinha or 'Aguardando servidor')
                 elseif nomeLinha and nomeLinha ~= '' then
                     nickAtual = nomeLinha
+                else
+                    local linhaBaixa = linhaEscolhida:lower()
+                    for id = 0, sampGetMaxPlayerId(false) do
+                        if sampIsPlayerConnected(id) then
+                            local nickTab = tostring(sampGetPlayerNickname(id) or '')
+                            if nickTab ~= '' and linhaBaixa:find(nickTab:lower(), 1, true) then
+                                nickAtual = nickTab
+                                break
+                            end
+                        end
+                    end
                 end
             end
             nickAtual = nickAtual or 'Aguardando servidor'
             rgAtual = nil
+            if nickAtual ~= 'Aguardando servidor' and nickAtual ~= '?' then
+                enviarAvisoTelagemReport(nickAtual, 'reports')
+            end
         end
         reportDialogTexto = ''
-        return
+        return true
     end
+    return false
+end
+_G.HZMobileProcessarRespostaReport = processarRespostaReport
+
+function samp.onSendDialogResponse(dialogId, button, listboxId, input)
+    if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
     if dialogId < D_MAIN or dialogId > 28022 then return end
     if not staffLogada then
@@ -1818,9 +1854,7 @@ function samp.onSendCommand(command)
         nickAtual = cache[rgAtual] and cache[rgAtual].nick or 'Aguardando servidor'
     end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
-        reportDialogId, aguardandoReport = -2, false
-        reportDialogTexto = ''
-        reportAte = (os.clock and os.clock() or 0) + 60
+        prepararAberturaReports()
     elseif cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
     elseif cmdLimpo == '/tvoff' then
