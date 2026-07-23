@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '3.1'
+local VERSION = '3.3'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -395,6 +395,11 @@ end
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
     local hora = horarioServidor ~= '' and horarioServidor or '--:--:--'
     sampShowDialog(id, titulo .. ' | ' .. dataServidor .. ' ' .. hora, texto, botao1 or 'Selecionar', botao2 or 'Voltar', estilo or 2)
+    -- Igual ao PC: permite que dialogos locais entreguem a escolha ao callback.
+    -- O onSendDialogResponse retorna false e impede o RPC de chegar ao servidor.
+    if type(sampSetDialogClientside) == 'function' then
+        sampSetDialogClientside(false)
+    end
 end
 
 local function abrirSeletorTV(busca)
@@ -985,9 +990,14 @@ function samp.onServerMessage(color, text)
         elseif baixo:find('ajud', 1, true) then cargoLogin = 'Ajudante'
         elseif baixo:find('administrador', 1, true) then cargoLogin = 'Administrador' end
         if cargoLogin and meuNick ~= '' then
-            definirPerfil(meuNick, cargoLogin, true)
+            local jaIdentificado = staffLogada
+                and tostring(cfg.dados.nome or ''):lower() == meuNick:lower()
+                and nivelCargo(cfg.dados.cargo) == nivelCargo(cargoLogin)
+            if not jaIdentificado then
+                definirPerfil(meuNick, cargoLogin, true)
+                sampAddChatMessage('{3EDC81}[CARGO] Identificado como ' .. cargoLogin .. '. Acesso ao /mods liberado conforme o cargo.', -1)
+            end
             loginStaffPendenteAte = 0
-            sampAddChatMessage('{3EDC81}[CARGO] Identificado como ' .. cargoLogin .. '. Acesso ao /mods liberado conforme o cargo.', -1)
         end
     end
     if not staffLogada then return end
