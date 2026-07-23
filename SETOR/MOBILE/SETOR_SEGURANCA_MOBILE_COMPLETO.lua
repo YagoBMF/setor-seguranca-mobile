@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.40'
+local VERSION = '3.41'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -42,8 +42,10 @@ local cfg = inicfg.load({
     dados = { nome = 'Vazio', cargo = 'Vazio' },
     interface = {
         painel_tv_x = 18, painel_tv_y = 250, painel_tv_visivel = true,
+        painel_tv_escala = 1.0,
         atendimento_x = 18, atendimento_y = 170,
-        suporte_x = 18, suporte_y = 280
+        atendimento_escala = 1.0,
+        suporte_x = 18, suporte_y = 280, suporte_escala = 1.0
     },
     modulos = {
         painel_tv = true, navegacao_tv = true,
@@ -57,10 +59,13 @@ cfg.interface = cfg.interface or {}
 if cfg.interface.painel_tv_x == nil then cfg.interface.painel_tv_x = 18 end
 if cfg.interface.painel_tv_y == nil then cfg.interface.painel_tv_y = 250 end
 if cfg.interface.painel_tv_visivel == nil then cfg.interface.painel_tv_visivel = true end
+if cfg.interface.painel_tv_escala == nil then cfg.interface.painel_tv_escala = 1.0 end
 if cfg.interface.atendimento_x == nil then cfg.interface.atendimento_x = 18 end
 if cfg.interface.atendimento_y == nil then cfg.interface.atendimento_y = 170 end
+if cfg.interface.atendimento_escala == nil then cfg.interface.atendimento_escala = 1.0 end
 if cfg.interface.suporte_x == nil then cfg.interface.suporte_x = 18 end
 if cfg.interface.suporte_y == nil then cfg.interface.suporte_y = 280 end
+if cfg.interface.suporte_escala == nil then cfg.interface.suporte_escala = 1.0 end
 if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
 if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
 if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
@@ -659,26 +664,34 @@ end
 
 local function instalarPainelTvMimgui()
     if not MIMGUI_OK or type(mimgui.OnFrame) ~= 'function' then return false end
-    local function dimensoesResponsivas(baseW, baseH)
+    local function dimensoesResponsivas(baseW, baseH, escalaEscolhida)
         local telaW, telaH = baseW + 24, baseH + 24
-        if type(mimgui.GetIO) == 'function' then
+        if type(getScreenResolution) == 'function' then
+            local okTela, w, h = pcall(getScreenResolution)
+            if okTela and tonumber(w) and tonumber(h) then
+                telaW, telaH = tonumber(w), tonumber(h)
+            end
+        elseif type(mimgui.GetIO) == 'function' then
             local okIo, io = pcall(mimgui.GetIO)
             if okIo and io and io.DisplaySize then
                 telaW = tonumber(io.DisplaySize.x) or telaW
                 telaH = tonumber(io.DisplaySize.y) or telaH
             end
         end
-        local escala = math.min(1, (telaW - 20) / baseW, (telaH - 20) / baseH)
-        escala = math.max(0.68, math.min(1, escala))
+        local desejada = tonumber(escalaEscolhida) or 1
+        local escala = math.min(desejada, (telaW - 20) / baseW, (telaH - 20) / baseH)
+        escala = math.max(0.68, math.min(1.2, escala))
         return escala, telaW, telaH,
             math.floor(baseW * escala + 0.5), math.floor(baseH * escala + 0.5)
     end
 
-    local function prepararJanelaResponsiva(baseW, baseH, posX, posY, carregarPosicao)
-        local escala, telaW, telaH, largura, altura = dimensoesResponsivas(baseW, baseH)
+    local function prepararJanelaResponsiva(baseW, baseH, posX, posY, carregarPosicao, escalaEscolhida)
+        local escala, telaW, telaH, largura, altura =
+            dimensoesResponsivas(baseW, baseH, escalaEscolhida)
         local x = math.max(0, math.min(tonumber(posX) or 0, math.max(0, telaW - largura)))
         local y = math.max(0, math.min(tonumber(posY) or 0, math.max(0, telaH - altura)))
-        if carregarPosicao and type(mimgui.SetNextWindowPos) == 'function' then
+        local foraDaTela = x ~= tonumber(posX) or y ~= tonumber(posY)
+        if (carregarPosicao or foraDaTela) and type(mimgui.SetNextWindowPos) == 'function' then
             mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
@@ -692,6 +705,20 @@ local function instalarPainelTvMimgui()
     local function escalarFonteJanela(escala)
         if type(mimgui.SetWindowFontScale) == 'function' then
             pcall(mimgui.SetWindowFontScale, escala)
+        end
+    end
+
+    local function alternarEscalaPainel(chave)
+        if type(mimgui.IsWindowHovered) ~= 'function'
+            or type(mimgui.IsMouseDoubleClicked) ~= 'function' then return end
+        local sobreItem = type(mimgui.IsAnyItemHovered) == 'function'
+            and mimgui.IsAnyItemHovered()
+        if mimgui.IsWindowHovered() and not sobreItem and mimgui.IsMouseDoubleClicked(0) then
+            local atual = tonumber(cfg.interface[chave]) or 1
+            local nova = atual < 0.9 and 1.0 or (atual < 1.1 and 1.2 or 0.8)
+            cfg.interface[chave] = nova
+            inicfg.save(cfg, CONFIG_FILE)
+            chat('{48C6FF}', 'Tamanho do painel: ' .. tostring(math.floor(nova * 100)) .. '%.')
         end
     end
 
@@ -711,7 +738,8 @@ local function instalarPainelTvMimgui()
                 local escala = prepararJanelaResponsiva(345, 190,
                     tonumber(cfg.interface.painel_tv_x) or 18,
                     tonumber(cfg.interface.painel_tv_y) or 250,
-                    not painelTvMimguiPosCarregada)
+                    not painelTvMimguiPosCarregada,
+                    cfg.interface.painel_tv_escala)
                 if not painelTvMimguiPosCarregada then
                     painelTvMimguiPosCarregada = true
                 end
@@ -751,6 +779,7 @@ local function instalarPainelTvMimgui()
                         end
                     end
                 end
+                alternarEscalaPainel('painel_tv_escala')
                 mimgui.End()
             end
         )
@@ -769,7 +798,8 @@ local function instalarPainelTvMimgui()
                 local escala = prepararJanelaResponsiva(265, 92,
                     tonumber(cfg.interface.atendimento_x) or 18,
                     tonumber(cfg.interface.atendimento_y) or 170,
-                    not atendimentoPosCarregada)
+                    not atendimentoPosCarregada,
+                    cfg.interface.atendimento_escala)
                 if not atendimentoPosCarregada then
                     atendimentoPosCarregada = true
                 end
@@ -805,6 +835,7 @@ local function instalarPainelTvMimgui()
                         end
                     end
                 end
+                alternarEscalaPainel('atendimento_escala')
                 mimgui.End()
             end
         )
@@ -828,7 +859,8 @@ local function instalarPainelTvMimgui()
                 local escala = prepararJanelaResponsiva(315, 150,
                     tonumber(cfg.interface.suporte_x) or 18,
                     tonumber(cfg.interface.suporte_y) or 280,
-                    not suportePosCarregada)
+                    not suportePosCarregada,
+                    cfg.interface.suporte_escala)
                 if not suportePosCarregada then
                     suportePosCarregada = true
                 end
@@ -862,6 +894,7 @@ local function instalarPainelTvMimgui()
                         end
                     end
                 end
+                alternarEscalaPainel('suporte_escala')
                 mimgui.End()
             end
         )
