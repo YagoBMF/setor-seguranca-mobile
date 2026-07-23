@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.33'
+local VERSION = '3.35'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -78,6 +78,9 @@ local staffLogada = false
 local loginStaffPendenteAte = 0
 local reportDialogId, aguardandoReport, reportAte = -1, false, 0
 local reportDialogTexto = ''
+local reportAlvoNick = nil
+local reportAlvoRg = nil
+local reportSelecaoEm = 0
 local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
 local horarioServidor, horarioServidorEm = '--:--:--', 0
 local dataServidor = '--/--/--'
@@ -110,6 +113,7 @@ local saciarmeProximo = 0
 local function prepararAberturaReports()
     reportDialogId, aguardandoReport = -2, false
     reportDialogTexto = ''
+    reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     reportAte = (os.clock and os.clock() or 0) + 60
 end
 
@@ -146,16 +150,16 @@ local modsCategoriaAtual = nil
 local PUNICOES_CADEIA = {
     {'NRA - Uso de arma em safe', 'Uso de arma em safe', 100},
     {'ASM - Agressao sem motivo', 'Agressao sem motivo', 100},
-    {'NS - Sem amor a vida', 'Sem amor a vida', 200},
-    {'DM - Matar sem motivo', 'Matar sem motivo', 200},
-    {'DM - Ferir sem motivo', 'Ferir sem motivo', 200},
+    {'DM - Matar/Ferir sem motivo', 'Matar/Ferir sem motivo', 200},
     {'Assalto loja irregular', 'Assalto loja irregular', 150},
     {'Assalto banco irregular', 'Assalto banco irregular', 150},
     {'Anti RP', 'Anti RP', 200},
-    {'Anti-RP - Roubo de caixinha sobre veiculo', 'Roubo de caixinha sobre veiculo', 200},
+    {'Anti-RP - Assalto em veiculo', 'Assalto em veiculo', 200},
     {'Anti-RP - Uso indevido de profissao', 'Uso indevido de profissao', 200},
+    {'Anti-RP - Algemar/taser durante trocacao', 'Algemar ou usar taser durante trocacao', 200},
+    {'Anti-RP - Abuso de safe', 'Abuso de safe', 200},
     {'PTR solo - Policial solo em acao', 'Policial solo em acao', 250},
-    {'VDM - Veiculo usado como arma', 'Veiculo usado como arma', 250},
+    {'VDM - Matar/Ferir com veiculo', 'Matar/Ferir com veiculo', 250},
     {'DB - Atirando de dentro do veiculo', 'Atirando de dentro do veiculo', 250},
     {'AB Desmanche - Abordagem no Desmanche', 'Abordagem no Desmanche', 250},
     {'KOS - Matar por identificacao', 'Matar por identificacao', 250},
@@ -164,11 +168,13 @@ local PUNICOES_CADEIA = {
     {'HK - Matar com helicoptero', 'Matar com helicoptero', 250},
     {'SLP - Sniper em local proibido', 'Sniper em local proibido', 250},
     {'Invasao sem autorizacao', 'Invasao sem autorizacao', 250},
-    {'RDM - Multiplas mortes', 'Multiplas mortes', 250},
+    {'RDM - Multiplas mortes sem motivo', 'Multiplas mortes sem motivo', 250},
     {'RK - Vinganca apos morte', 'Vinganca apos morte', 250},
-    {'Spam Kill - Abusando de interior', 'Abusando de interior', 250},
-    {'Correndo safe - Abusando de safe', 'Abusando de safe em abordagem ou acao', 250},
-    {'CL - Desconectou em acao', 'Desconectou em acao', 300},
+    {'Spam Kill - Abuso de interior para matar', 'Abuso de interior para matar', 250},
+    {'CB - Forcar perseguicao', 'Forcar perseguicao', 250},
+    {'SAAV - Sem Amor a Vida', 'Sem Amor a Vida', 250},
+    {'PK - Ignorar perda de memoria', 'Ignorar perda de memoria', 250},
+    {'CL - Combat Log', 'Desconectou durante acao', 300},
     {'Corrupcao', 'Corrupcao', 300},
     {'Dark RP', 'Dark RP', 300}
 }
@@ -176,7 +182,8 @@ local PUNICOES_CADEIA = {
 -- Tabelas do Painel TV. Estrutura: texto visual, motivo enviado, duracao em dias.
 _G.HZMobileTabelasPunicao = {
     ban_permanente = {
-        {'Cheat', 'Cheat', 0}, {'Abuso de bug', 'Abuso de bug', 0},
+        {'Cheat', 'Cheat', 0}, {'Mod proibido', 'Mod proibido', 0},
+        {'Abuso de bug', 'Abuso de bug', 0},
         {'Comercio ilegal', 'Comercio ilegal', 0}, {'Divulgacao', 'Divulgacao', 0},
         {'Nick improprio', 'Nick improprio', 0}, {'Money farm', 'Money farm', 0},
         {'Racismo', 'Racismo', 0}, {'Gordofobia', 'Gordofobia', 0}
@@ -205,7 +212,7 @@ _G.HZMobileTabelasPunicao = {
         {'Flood | 1 dia', 'Flood', 1}
     },
     kick = {
-        {'RT / Bugado', 'RT / Bugado', 0},
+        {'RT / Jogador bugado', 'RT / Jogador bugado', 0},
         {'Bugando evento', 'Bugando evento', 0}
     }
 }
@@ -532,6 +539,7 @@ local function enviarAvisoTelagemReport(nick, rg)
         end)
     end
     aguardandoReport, reportAte = false, 0
+    reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     return true
 end
 
@@ -975,6 +983,28 @@ end
 local function capturarHorarioServidor(texto)
     texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
     local baixo = texto:lower()
+    -- No /reports, os dados do alvo podem chegar separados em varios
+    -- textdraws. Guarda o nick online e so confirma quando o RG tambem chegar.
+    if aguardandoReport then
+        for id = 0, sampGetMaxPlayerId(false) do
+            if sampIsPlayerConnected(id) then
+                local nickTab = tostring(sampGetPlayerNickname(id) or '')
+                if nickTab ~= '' and baixo:find(nickTab:lower():gsub('_', ' '), 1, true) then
+                    reportAlvoNick = nickTab
+                    break
+                end
+            end
+        end
+        local rgReport = texto:match('[Rr][Gg][:%s]+(%d+)')
+        if rgReport then reportAlvoRg = rgReport end
+        if reportAlvoRg and reportAlvoNick then
+            nickAtual, rgAtual = reportAlvoNick, reportAlvoRg
+            salvarRG(reportAlvoRg, reportAlvoNick)
+            painelTvFlutuante = true
+            enviarAvisoTelagemReport(reportAlvoNick, reportAlvoRg)
+            reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
+        end
+    end
     -- Durante a telagem pela TAB, o RG chega pelos textdraws do servidor.
     -- Vincula esse RG ao nick online selecionado para todas as acoes do painel.
     if painelTvFlutuante then
@@ -1518,8 +1548,11 @@ function samp.onSendClickPlayer(playerId, source)
     -- usado pelo TAB. Nesse caso, preserva a autorizacao temporaria para que a
     -- confirmacao da telagem envie o aviso no /ac.
     local agora = os.clock and os.clock() or 0
-    if not (aguardandoReport and agora <= reportAte) then
+    local cliqueImediatoDoReport = aguardandoReport and reportSelecaoEm > 0
+        and agora - reportSelecaoEm <= 2 and agora <= reportAte
+    if not cliqueImediatoDoReport then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     end
 end
 
@@ -1578,6 +1611,8 @@ local function processarRespostaReport(dialogId, button, listboxId, input)
             -- A linha da lista pertence ao reportador. O alvo correto so sera
             -- definido quando o servidor responder com as informacoes da telagem.
             painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
+            reportAlvoNick, reportAlvoRg = nil, nil
+            reportSelecaoEm = os.clock and os.clock() or 0
         end
         reportDialogTexto = ''
         return true
@@ -1809,6 +1844,7 @@ function samp.onSendCommand(command)
         dialogAction = nil
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
         reportDialogTexto = ''
+        reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
         painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
@@ -1818,6 +1854,10 @@ function samp.onSendCommand(command)
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
     -- /la continua passando normalmente para que o servidor confirme o login.
     if not staffLogada then return end
+    if cmdLimpo == '/tv' or cmdLimpo:match('^/tv%s+') then
+        aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
+    end
     if cmdLimpo == '/tv' then
         abrirSeletorTV('')
         return false
@@ -1837,6 +1877,7 @@ function samp.onSendCommand(command)
         prepararAberturaReports()
     elseif cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
     elseif cmdLimpo == '/tvoff' then
         painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
     end
@@ -1873,6 +1914,7 @@ function samp.onServerMessage(color, text)
         or baixo:find('jogador desconectou', 1, true)
         or baixo:find('jogador offline', 1, true)) then
         aguardandoReport, reportAte = false, 0
+        reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
         painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
     end
 
