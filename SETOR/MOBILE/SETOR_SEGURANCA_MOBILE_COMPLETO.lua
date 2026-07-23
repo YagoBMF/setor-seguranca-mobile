@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '2.5'
+local VERSION = '3.0'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -32,14 +32,27 @@ local WEBHOOKS = {
 
 local cfg = inicfg.load({
     dados = { nome = 'Vazio', cargo = 'Vazio' },
-    modulos = { logs = true, monitoramento = true, navegacao = true, atalhos = true }
+    modulos = {
+        painel_tv = true, navegacao_tv = true,
+        monitoramento = true, acoes_staff = true, logs = true
+    }
 }, CONFIG_FILE)
+
+-- Migra configuracoes das primeiras versoes sem perder escolhas do usuario.
+cfg.modulos = cfg.modulos or {}
+if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
+if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
+if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
+if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
+if cfg.modulos.logs == nil then cfg.modulos.logs = true end
+inicfg.save(cfg, CONFIG_FILE)
 
 local cache, monitorados = {}, {}
 local rgAtual, nickAtual = nil, nil
 local pendente = nil
 local navNovato, navTodos = 0, 0
 local staffLogada = false
+local loginStaffPendenteAte = 0
 local reportDialogId, aguardandoReport, reportAte = -1, false, 0
 local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
 local horarioServidor, horarioServidorEm = '--:--:--', 0
@@ -68,9 +81,11 @@ local D_TABELA_PUNICAO = 28017
 local D_INPUT_ALVO_TABELA = 28018
 local D_CONFIRMAR_TABELA = 28019
 local D_SELETOR_TV = 28020
+local D_MOD_CATEGORIA = 28021
 local dialogAction = nil
 local punicaoTabelaSelecionada = nil
 local jogadoresSeletorTV = {}
+local modsCategoriaAtual = nil
 
 -- Texto visual pode manter a sigla; o comando envia somente o motivo real.
 local PUNICOES_CADEIA = {
@@ -123,6 +138,12 @@ local function perfilOk()
     return false
 end
 
+local function exigirStaff(recurso)
+    if staffLogada == true then return true end
+    sampAddChatMessage('{FF6B6B}[SETOR] Entre na staff com /la antes de usar ' .. tostring(recurso or 'esta funcao') .. '.', -1)
+    return false
+end
+
 local function nivelCargo(cargo)
     cargo = clean(cargo):lower()
     if cargo:find('diretor', 1, true) then return 5 end
@@ -131,6 +152,29 @@ local function nivelCargo(cargo)
     if cargo:find('moder', 1, true) then return 2 end
     if cargo:find('ajud', 1, true) then return 1 end
     return 0
+end
+
+local MODULOS_INFO = {
+    painel_tv = {'PAINEL TV', 'Telagem, status e menu TV.', 2},
+    navegacao_tv = {'NAVEGACAO TV', 'Selecao e atalhos entre jogadores.', 2},
+    monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
+    acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
+    logs = {'LOGS', 'Registros das acoes no Discord.', 1}
+}
+
+local MODULOS_CATEGORIAS = {
+    {'PAINEIS', 'Painel TV, telagem e punicoes.', {'painel_tv'}},
+    {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
+    {'FERRAMENTAS', 'Monitoramento, acoes e registros.', {'monitoramento', 'acoes_staff', 'logs'}}
+}
+
+local function moduloPermitido(id)
+    local info = MODULOS_INFO[id]
+    return staffLogada and info and nivelCargo(cfg.dados.cargo) >= tonumber(info[3] or 99)
+end
+
+local function moduloAtivo(id)
+    return moduloPermitido(id) and cfg.modulos[id] ~= false
 end
 
 local function definirPerfil(nome, cargo, logado)
@@ -266,7 +310,7 @@ local function acharRG(valor)
 end
 
 local function post(url, mensagem, retorno)
-    if not cfg.modulos.logs or not perfilOk() then return end
+    if not moduloAtivo('logs') then return end
     lua_thread.create(function()
         local ok, res = pcall(requests.post, url, {
             data = '{"content":"' .. jsonEscape(mensagem) .. '"}',
@@ -317,7 +361,8 @@ local function listaJogadores(somenteNovatos)
 end
 
 local function navegar(novatos, direcao)
-    if not cfg.modulos.navegacao then return chat('{FF5555}', 'Modulo de navegacao desativado.') end
+    if not exigirStaff('a navegacao TV') then return end
+    if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Modulo de navegacao desativado ou bloqueado para o cargo.') end
     local lista = listaJogadores(novatos)
     if #lista == 0 then return chat('{FFFF00}', 'Nenhum jogador disponivel nessa lista.') end
     if novatos then
@@ -348,6 +393,7 @@ end
 
 local function abrirSeletorTV(busca)
     if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de usar a telagem.') end
+    if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Navegacao TV desativada ou bloqueada para o cargo.') end
     busca = trim(busca):lower()
     jogadoresSeletorTV = {}
     local linhas = {}
@@ -390,12 +436,14 @@ local function abrirPrincipal()
 end
 
 local function abrirTV()
+    if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_TV, 'SETOR - TV / TELAGEM',
         'Proximo novato\nNovato anterior\nProximo jogador\nJogador anterior\nDesligar TV\nMostrar RG atual',
         'Executar', 'Voltar', 2)
 end
 
 local function abrirPunicoes()
+    if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_PUNICOES, 'SETOR - PUNICOES',
         'Tabela de cadeia\nBan permanente (manual)\nBan temporario (manual)\nCadeia manual\nMute (somente registro)',
         'Continuar', 'Voltar', 2)
@@ -422,6 +470,7 @@ local function levelDoRG(rg)
 end
 
 local function confirmarPunicaoTabela(rg)
+    if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     rg = acharRG(rg) or trim(rg)
     if not rg:match('^%d+$') or not punicaoTabelaSelecionada then
         return chat('{FFFF00}', 'Informe um RG ou nome salvo no cache.')
@@ -440,6 +489,7 @@ local function confirmarPunicaoTabela(rg)
 end
 
 local function abrirAcoes()
+    if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
     dialogo(D_ACOES, 'SETOR - ACOES',
         'Ir ate jogador\nTrazer jogador\nReviver jogador\nCongelar jogador\nDescongelar jogador\nPrender armas\nDefinir vida\nDefinir colete',
         'Continuar', 'Voltar', 2)
@@ -452,18 +502,42 @@ local function abrirRG()
 end
 
 local function abrirMonitor()
+    if not moduloAtivo('monitoramento') then return chat('{FF5555}', 'Monitoramento desativado ou bloqueado para o cargo.') end
     dialogo(D_MONITOR, 'SETOR - MONITORAMENTO',
         'Adicionar monitorado\nRemover monitorado\nListar monitorados',
         'Abrir', 'Voltar', 2)
 end
 
-local function abrirModulos()
-    dialogo(D_MODULOS, 'SETOR - MODULOS (toque para alternar)',
-        'Logs: ' .. (cfg.modulos.logs and 'ON' or 'OFF') ..
-        '\nMonitoramento: ' .. (cfg.modulos.monitoramento and 'ON' or 'OFF') ..
-        '\nNavegacao TV: ' .. (cfg.modulos.navegacao and 'ON' or 'OFF') ..
-        '\nAtalhos: ' .. (cfg.modulos.atalhos and 'ON' or 'OFF'),
-        'Alternar', 'Voltar', 2)
+local function abrirModulos(categoriaNome)
+    if not exigirStaff('/mods') then return end
+    local linhas = {}
+    modsCategoriaAtual = categoriaNome
+    if not categoriaNome then
+        for _, categoria in ipairs(MODULOS_CATEGORIAS) do
+            local ativos = 0
+            for _, id in ipairs(categoria[3]) do if moduloAtivo(id) then ativos = ativos + 1 end end
+            linhas[#linhas + 1] = string.format('{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s', categoria[1], ativos, #categoria[3], categoria[2])
+        end
+        dialogo(D_MODULOS,
+            'SETOR ADVANCED | CATEGORIAS | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
+            table.concat(linhas, '\n'), 'ABRIR', 'FECHAR', 2)
+        return
+    end
+    local ids = {}
+    for _, categoria in ipairs(MODULOS_CATEGORIAS) do
+        if categoria[1] == categoriaNome then ids = categoria[3] break end
+    end
+    for _, id in ipairs(ids) do
+        local info = MODULOS_INFO[id]
+        local estado, cor
+        if not moduloPermitido(id) then estado, cor = 'BLOQUEADO', '{FF6B6B}'
+        elseif cfg.modulos[id] ~= false then estado, cor = 'ATIVO', '{3EDC81}'
+        else estado, cor = 'DESATIVADO', '{FFB347}' end
+        linhas[#linhas + 1] = string.format('{FFFFFF}%s  %s[%s]{A8B5C8} - %s', info[1], cor, estado, info[2])
+    end
+    dialogo(D_MOD_CATEGORIA,
+        'SETOR ADVANCED | ' .. categoriaNome .. ' | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
+        table.concat(linhas, '\n'), 'ALTERAR', 'VOLTAR', 2)
 end
 
 local function pedirAcao(acao, instrucao)
@@ -472,6 +546,8 @@ local function pedirAcao(acao, instrucao)
 end
 
 local function executarAcaoDialogo(valor)
+    if not exigirStaff('as acoes administrativas') then return end
+    if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
     local acao = dialogAction
     dialogAction = nil
     if not acao then return end
@@ -508,6 +584,8 @@ local function pedirPunicao(tipo)
 end
 
 local function executarPunicaoDialogo(valor)
+    if not exigirStaff('as punicoes') then return end
+    if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     local tipo = dialogAction
     dialogAction = nil
     valor = trim(valor)
@@ -549,33 +627,46 @@ local function registrarComandos()
         chat('{3EDC81}', 'Perfil definido: ' .. cfg.dados.cargo .. ' ' .. nome)
     end)
     sampRegisterChatCommand('mods', function()
-        if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de abrir os modulos.') end
+        if not staffLogada then
+            return sampAddChatMessage('{FF6B6B}[MODS] Entre na staff para acessar os modulos.', -1)
+        end
         abrirModulos()
     end)
     sampRegisterChatCommand('modulo', function(arg)
+        if not exigirStaff('/modulo') then return end
         local nome, estado = trim(arg):match('^(%S+)%s+(on|off)$')
-        if not nome or cfg.modulos[nome] == nil then return chat('{FFFF00}', 'Use /modulo logs|monitoramento|navegacao|atalhos on|off') end
+        if nome == 'navegacao' then nome = 'navegacao_tv' end
+        if nome == 'atalhos' then nome = 'acoes_staff' end
+        if not nome or not MODULOS_INFO[nome] then
+            return chat('{FFFF00}', 'Use /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff|logs on|off')
+        end
+        if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
         inicfg.save(cfg, CONFIG_FILE)
         chat('{3EDC81}', nome .. ' = ' .. estado)
     end)
     sampRegisterChatCommand('rgnome', function(arg)
+        if not exigirStaff('/rgnome') then return end
         local rg, nick, total = acharRG(arg)
         if rg then chat('{3EDC81}', nick .. ' - RG ' .. rg) elseif total and total > 1 then chat('{FFFF00}', 'Mais de um resultado; refine o nome.') else chat('{FF5555}', 'Nao encontrado no cache.') end
     end)
     sampRegisterChatCommand('rgatual', function()
+        if not exigirStaff('/rgatual') then return end
         if rgAtual then chat('{3EDC81}', (nickAtual or '?') .. ' - RG ' .. rgAtual) else chat('{FFFF00}', 'Nenhum jogador telado foi identificado.') end
     end)
     sampRegisterChatCommand('rgcache', function()
+        if not exigirStaff('/rgcache') then return end
         local n = 0 for _ in pairs(cache) do n = n + 1 end
         chat('{3EDC81}', n .. ' RG(s) no cache mobile.')
     end)
     sampRegisterChatCommand('rgdel', function(arg)
+        if not exigirStaff('/rgdel') then return end
         local rg = trim(arg)
         if cache[rg] then cache[rg] = nil salvarTabela(CACHE_FILE, cache) chat('{3EDC81}', 'RG ' .. rg .. ' removido.') else chat('{FF5555}', 'RG inexistente.') end
     end)
     sampRegisterChatCommand('monitor', function(arg)
-        if not cfg.modulos.monitoramento then return chat('{FF5555}', 'Monitoramento desativado.') end
+        if not exigirStaff('/monitor') then return end
+        if not moduloAtivo('monitoramento') then return chat('{FF5555}', 'Monitoramento desativado ou bloqueado para o cargo.') end
         local alvo, motivo = trim(arg):match('^(%S+)%s+(.+)$')
         if not alvo then return chat('{FFFF00}', 'Use /monitor RG-ou-nome motivo') end
         local rg, nick = acharRG(alvo)
@@ -586,10 +677,12 @@ local function registrarComandos()
         chat('{3EDC81}', nick .. ' [RG ' .. rg .. '] monitorado: ' .. motivo)
     end)
     sampRegisterChatCommand('desmonitor', function(arg)
+        if not exigirStaff('/desmonitor') then return end
         local rg = acharRG(arg) or trim(arg)
         if monitorados[rg] then monitorados[rg] = nil salvarTabela(MONITOR_FILE, monitorados) chat('{3EDC81}', 'RG ' .. rg .. ' removido dos monitorados.') else chat('{FFFF00}', 'RG nao monitorado.') end
     end)
     sampRegisterChatCommand('monitorados', function()
+        if not exigirStaff('/monitorados') then return end
         local n = 0
         for rg, info in pairs(monitorados) do n = n + 1 chat('{48C6FF}', info.nick .. ' [RG ' .. rg .. '] - ' .. info.motivo) end
         if n == 0 then chat('{FFFF00}', 'Lista de monitorados vazia.') end
@@ -606,7 +699,8 @@ local function registrarComandos()
     }
     for nome, dados in pairs(atalhos) do
         sampRegisterChatCommand(nome, function(arg)
-            if not cfg.modulos.atalhos or not perfilOk() then return end
+            if not exigirStaff('/' .. nome) then return end
+            if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
             local rg = acharRG(arg) or trim(arg)
             if not rg:match('^%d+$') then return chat('{FFFF00}', 'Informe um RG ou nome salvo no cache.') end
             sampSendChat('/' .. dados[1] .. ' ' .. rg)
@@ -614,17 +708,22 @@ local function registrarComandos()
         end)
     end
     sampRegisterChatCommand('setorvida', function(arg)
+        if not exigirStaff('/setorvida') then return end
+        if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
         local alvo, valor = trim(arg):match('^(%S+)%s+(%d+)$'); local rg = alvo and (acharRG(alvo) or alvo)
         if not rg or not rg:match('^%d+$') then return chat('{FFFF00}', 'Use /setorvida RG-ou-nome valor') end
         sampSendChat('/setvida ' .. rg .. ' ' .. valor); logAcao('SETVIDA', rg, valor)
     end)
     sampRegisterChatCommand('setorcolete', function(arg)
+        if not exigirStaff('/setorcolete') then return end
+        if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
         local alvo, valor = trim(arg):match('^(%S+)%s+(%d+)$'); local rg = alvo and (acharRG(alvo) or alvo)
         if not rg or not rg:match('^%d+$') then return chat('{FFFF00}', 'Use /setorcolete RG-ou-nome valor') end
         sampSendChat('/setcolete ' .. rg .. ' ' .. valor); logAcao('SETCOLETE', rg, valor)
     end)
     sampRegisterChatCommand('mu', function(arg)
-        if not perfilOk() then return end
+        if not exigirStaff('/mu') then return end
+        if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
         local nick, rg, dias, motivo = trim(arg):match('^(%S+)%s+(%d+)%s+(%d+)%s+(.+)$')
         if not nick then return chat('{FFFF00}', 'Use /mu Nick RG dias motivo') end
         logPunicao(nick, rg, dias .. ' dias', motivo, 'mutou', WEBHOOKS.MUTE, 'MUTE')
@@ -662,22 +761,46 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         return
     end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_SELETOR_TV then return end
+    if dialogId < D_MAIN or dialogId > D_MOD_CATEGORIA then return end
+    if not staffLogada then
+        sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
+        return false
+    end
 
     if button == 0 then
         if dialogId == D_MAIN then return false end
+        if dialogId == D_MODULOS then return false end
+        if dialogId == D_MOD_CATEGORIA then abrirModulos() return false end
         if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or dialogId == D_INPUT_ALVO_TABELA or dialogId == D_CONFIRMAR_TABELA or
            dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL or
            dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
             abrirPrincipal()
         elseif dialogId == D_TV or dialogId == D_PUNICOES or dialogId == D_TABELA_PUNICAO or dialogId == D_ACOES or
-               dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_MODULOS or dialogId == D_SELETOR_TV then
+               dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_SELETOR_TV then
             abrirPrincipal()
         end
         return false
     end
 
-    if dialogId == D_SELETOR_TV then
+    if dialogId == D_MODULOS then
+        local categoria = MODULOS_CATEGORIAS[(tonumber(listboxId) or -1) + 1]
+        if categoria then abrirModulos(categoria[1]) end
+    elseif dialogId == D_MOD_CATEGORIA then
+        local ids = {}
+        for _, categoria in ipairs(MODULOS_CATEGORIAS) do
+            if categoria[1] == modsCategoriaAtual then ids = categoria[3] break end
+        end
+        local id = ids[(tonumber(listboxId) or -1) + 1]
+        if id then
+            if not moduloPermitido(id) then
+                chat('{FF5555}', 'Funcao bloqueada para o cargo ' .. tostring(cfg.dados.cargo) .. '.')
+            else
+                cfg.modulos[id] = cfg.modulos[id] == false
+                inicfg.save(cfg, CONFIG_FILE)
+            end
+            lua_thread.create(function() wait(150) abrirModulos(modsCategoriaAtual) end)
+        end
+    elseif dialogId == D_SELETOR_TV then
         local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
         if jogador then
             local rg = acharRG(jogador.nick)
@@ -717,7 +840,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     elseif dialogId == D_INPUT_ALVO_TABELA then
         confirmarPunicaoTabela(input)
     elseif dialogId == D_CONFIRMAR_TABELA then
-        if type(dialogAction) == 'table' and dialogAction.tipo == 'tabela' then
+        if not moduloAtivo('painel_tv') then
+            chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.')
+            dialogAction = nil
+        elseif type(dialogAction) == 'table' and dialogAction.tipo == 'tabela' then
             sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             dialogAction = nil
             punicaoTabelaSelecionada = nil
@@ -766,18 +892,27 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     elseif dialogId == D_INPUT_DESMONITOR then
         local rg = acharRG(input) or trim(input)
         if monitorados[rg] then monitorados[rg] = nil salvarTabela(MONITOR_FILE, monitorados) chat('{3EDC81}', 'RG ' .. rg .. ' removido.') else chat('{FFFF00}', 'RG nao monitorado.') end
-    elseif dialogId == D_MODULOS then
-        local nomes = {'logs', 'monitoramento', 'navegacao', 'atalhos'}
-        local nome = nomes[listboxId + 1]
-        if nome then cfg.modulos[nome] = not cfg.modulos[nome] inicfg.save(cfg, CONFIG_FILE) end
-        lua_thread.create(function() wait(150) abrirModulos() end)
     end
     return false
 end
 
 function samp.onSendCommand(command)
-    if not perfilOk() then return end
     local cmdLimpo = trim(command):lower()
+    if cmdLimpo == '/la' or cmdLimpo:match('^/la%s+')
+        or cmdLimpo == '/logaradm' or cmdLimpo:match('^/logaradm%s+') then
+        loginStaffPendenteAte = (os.clock and os.clock() or 0) + 20
+        return
+    end
+    if cmdLimpo == '/da' or cmdLimpo == '/sairadm' or cmdLimpo == '/deslogaradm' then
+        staffLogada = false
+        loginStaffPendenteAte = 0
+        dialogAction = nil
+        aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        return
+    end
+    -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
+    -- /la continua passando normalmente para que o servidor confirme o login.
+    if not staffLogada then return end
     local buscaTv = trim(command):match('^/tv%s+(.+)$')
     if buscaTv and not trim(buscaTv):match('^%d+$') then
         abrirSeletorTV(buscaTv)
@@ -792,8 +927,6 @@ function samp.onSendCommand(command)
             wait(450)
             if staffLogada then abrirTV() end
         end)
-    elseif cmdLimpo == '/da' or cmdLimpo == '/sairadm' or cmdLimpo == '/deslogaradm' then
-        staffLogada = false
     end
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
@@ -820,14 +953,32 @@ function samp.onServerMessage(color, text)
     local ct = clean(text)
     local baixo = ct:lower()
 
-    -- Detecta automaticamente Ajudante, Moderador, Administrador, Coordenador e Diretor.
-    local cargoLogin, nomeLogin = ct:match('[Oo]la%s+([^%s]+)%s+([%w_]+),.-logou.-administra')
-    if not cargoLogin then
-        cargoLogin, nomeLogin = ct:match('ADMIN:%s+O%(A%)%s+([^%s]+)%s+([%w_]+)%[%d+%]%s+logou%s+na%s+staff')
+    -- Identificacao automatica segura, equivalente ao PC: a mensagem precisa
+    -- citar o nick local ou ser a resposta direta a um /la recente.
+    local meuNick = ''
+    if type(sampGetPlayerIdByCharHandle) == 'function' and type(sampGetPlayerNickname) == 'function' then
+        local ok, encontrado, meuId = pcall(sampGetPlayerIdByCharHandle, PLAYER_PED)
+        if ok and encontrado then meuNick = tostring(sampGetPlayerNickname(meuId) or '') end
     end
-    if cargoLogin and nomeLogin and nivelCargo(cargoLogin) > 0 then
-        definirPerfil(nomeLogin, CARGOS[tostring(nivelCargo(cargoLogin))] or cargoLogin, true)
+    local agoraLogin = os.clock and os.clock() or 0
+    local mensagemMinha = meuNick ~= '' and baixo:find(meuNick:lower(), 1, true) ~= nil
+    local loginPendente = loginStaffPendenteAte > agoraLogin
+    local confirmouLogin = baixo:find('logou', 1, true)
+        and (baixo:find('staff', 1, true) or baixo:find('administra', 1, true))
+    if confirmouLogin and (mensagemMinha or loginPendente) then
+        local cargoLogin
+        if baixo:find('diretor', 1, true) then cargoLogin = 'Diretor'
+        elseif baixo:find('coorden', 1, true) then cargoLogin = 'Coordenador'
+        elseif baixo:find('moder', 1, true) then cargoLogin = 'Moderador'
+        elseif baixo:find('ajud', 1, true) then cargoLogin = 'Ajudante'
+        elseif baixo:find('administrador', 1, true) then cargoLogin = 'Administrador' end
+        if cargoLogin and meuNick ~= '' then
+            definirPerfil(meuNick, cargoLogin, true)
+            loginStaffPendenteAte = 0
+            sampAddChatMessage('{3EDC81}[CARGO] Identificado como ' .. cargoLogin .. '. Acesso ao /mods liberado conforme o cargo.', -1)
+        end
     end
+    if not staffLogada then return end
     local nick, rg = ct:match('[Nn]ome[:%s]+([%w_]+).-RG[:%s]+(%d+)')
     if not nick then nick, rg = ct:match('[Nn]ick[:%s]+([%w_]+).-RG[:%s]+(%d+)') end
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nome[:%s]+([%w_]+)') end
@@ -869,11 +1020,8 @@ function main()
     cache = carregarTabela(CACHE_FILE)
     monitorados = carregarTabela(MONITOR_FILE)
     registrarComandos()
-    if cfg.dados.nome ~= 'Vazio' then
-        chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo: ' .. cfg.dados.cargo .. ' ' .. cfg.dados.nome .. '. Use /setor.')
-    else
-        chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1-5.')
-    end
+    chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo. Use /la para identificar automaticamente nome e cargo.')
+    chat('{A8B5C8}', '/configadm fica disponivel somente como configuracao de emergencia.')
     -- No Android, algumas builds do MonetLoader fecham o processo durante
     -- requisicoes automaticas na inicializacao. A atualizacao fica somente
     -- sob comando explicito: /setoratualizar.
