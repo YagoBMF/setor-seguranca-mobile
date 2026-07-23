@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '3.8'
+local VERSION = '3.10'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -410,9 +410,15 @@ local function desenharPainelTvFlutuante()
         or cfg.interface.painel_tv_visivel == false then return end
     if type(renderDrawBox) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
 
-    if not painelTvFonte and type(renderFontCreate) == 'function' then
-        painelTvFonte = renderFontCreate('Arial', 9, 5)
-        painelTvFonteTitulo = renderFontCreate('Arial', 10, 5)
+    if not painelTvFonte then
+        -- MonetLoader mobile usa renderCreateFont; algumas builds de MoonLoader
+        -- expõem o mesmo recurso como renderFontCreate.
+        local criarFonte = type(renderCreateFont) == 'function' and renderCreateFont
+            or (type(renderFontCreate) == 'function' and renderFontCreate)
+        if criarFonte then
+            painelTvFonte = criarFonte('Arial', 9, 5)
+            painelTvFonteTitulo = criarFonte('Arial', 10, 5)
+        end
     end
     if not painelTvFonte then return end
 
@@ -504,17 +510,36 @@ local function abrirSeletorTV(busca)
     if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de usar a telagem.') end
     if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Navegacao TV desativada ou bloqueada para o cargo.') end
     busca = trim(busca):lower()
+    if busca == 'a' or busca == 'all' or busca == 'todos' or busca == '*' then busca = '' end
     jogadoresSeletorTV = {}
     local linhas = {}
     for _, jogador in ipairs(listaJogadores(false)) do
         local nick = tostring(jogador.nick or '')
         if busca == '' or nick:lower():find(busca, 1, true) then
+            local nickBaixo = nick:lower()
+            jogador.prioridadeBusca = busca == '' and 3
+                or (nickBaixo == busca and 1)
+                or (nickBaixo:sub(1, #busca) == busca and 2)
+                or 3
             jogadoresSeletorTV[#jogadoresSeletorTV + 1] = jogador
-            linhas[#linhas + 1] = string.format('%s\tID: %d\tLevel: %d', nick, jogador.id, jogador.level)
         end
     end
     if #jogadoresSeletorTV == 0 then
         return chat('{FFFF00}', 'Nenhum jogador encontrado para: ' .. busca)
+    end
+    table.sort(jogadoresSeletorTV, function(a, b)
+        if a.prioridadeBusca ~= b.prioridadeBusca then return a.prioridadeBusca < b.prioridadeBusca end
+        return a.id < b.id
+    end)
+    for _, jogador in ipairs(jogadoresSeletorTV) do
+        linhas[#linhas + 1] = string.format('%s\tID: %d\tLevel: %d', jogador.nick, jogador.id, jogador.level)
+    end
+    -- Nome ou abreviacao que encontrou somente uma pessoa: tela imediatamente.
+    if busca ~= '' and #jogadoresSeletorTV == 1 then
+        local jogador = jogadoresSeletorTV[1]
+        nickAtual, rgAtual, painelTvFlutuante = jogador.nick, acharRG(jogador.nick), true
+        sampSendChat('/tv ' .. tostring(jogador.id))
+        return chat('{48C6FF}', 'Telando ' .. jogador.nick .. ' [ID ' .. jogador.id .. '] pelo TAB.')
     end
     dialogo(D_SELETOR_TV, 'SETOR - SELECIONAR PLAYER', table.concat(linhas, '\n'), 'Telar', 'Cancelar', 2)
 end
@@ -899,6 +924,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     if button == 0 then
         if dialogId == D_MAIN then return false end
         if dialogId == D_TV then return false end
+        if dialogId == D_SELETOR_TV then return false end
         if dialogId == D_MODULOS then return false end
         if dialogId == D_MOD_CATEGORIA then
             lua_thread.create(function() wait(150) abrirModulos() end)
@@ -941,7 +967,8 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if jogador then
             local rg = acharRG(jogador.nick)
             nickAtual, rgAtual, painelTvFlutuante = jogador.nick, rg, true
-            sampSendChat('/tv ' .. tostring(rg or jogador.id))
+            sampSendChat('/tv ' .. tostring(jogador.id))
+            chat('{48C6FF}', 'Telando ' .. jogador.nick .. ' [ID ' .. jogador.id .. '] pelo TAB.')
         end
     elseif dialogId == D_MAIN then
         if listboxId == 0 then abrirTV()
@@ -1051,6 +1078,10 @@ function samp.onSendCommand(command)
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
     -- /la continua passando normalmente para que o servidor confirme o login.
     if not staffLogada then return end
+    if cmdLimpo == '/tv' then
+        abrirSeletorTV('')
+        return false
+    end
     local buscaTv = trim(command):match('^/tv%s+(.+)$')
     if buscaTv and not trim(buscaTv):match('^%d+$') then
         abrirSeletorTV(buscaTv)
