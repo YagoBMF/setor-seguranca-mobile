@@ -4,8 +4,10 @@
 local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
+local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
+if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.10'
+local VERSION = '3.11'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -73,6 +75,7 @@ local painelTvFlutuante = false
 local painelTvFonte, painelTvFonteTitulo = nil, nil
 local painelTvArrastando, painelTvOffsetX, painelTvOffsetY = false, 0, 0
 local painelTvToqueAnterior, painelTvAcaoPendente = false, nil
+local painelTvMimguiPosCarregada, painelTvMimguiUltimoSave = false, 0
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -406,6 +409,7 @@ local function dadosJogadorAtual()
 end
 
 local function desenharPainelTvFlutuante()
+    if MIMGUI_OK then return end
     if not painelTvFlutuante or not staffLogada or not moduloAtivo('painel_tv')
         or cfg.interface.painel_tv_visivel == false then return end
     if type(renderDrawBox) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
@@ -477,6 +481,74 @@ local function desenharPainelTvFlutuante()
     renderFontDrawText(painelTvFonte, '{FFFFFF}PUNIR', x + 81, y + 82, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte, '{FFFFFF}ACOES', x + 146, y + 82, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte, '{FFFFFF}OFF', x + 221, y + 82, 0xFFFFFFFF)
+end
+
+local function instalarPainelTvMimgui()
+    if not MIMGUI_OK or type(mimgui.OnFrame) ~= 'function' then return false end
+    local ok, erro = pcall(function()
+        mimgui.OnFrame(
+            function()
+                return painelTvFlutuante and staffLogada and moduloAtivo('painel_tv')
+                    and cfg.interface.painel_tv_visivel ~= false
+            end,
+            function()
+                local flags = 0
+                if mimgui.WindowFlags then
+                    flags = (mimgui.WindowFlags.NoCollapse or 0)
+                        + (mimgui.WindowFlags.NoResize or 0)
+                        + (mimgui.WindowFlags.NoScrollbar or 0)
+                end
+                if not painelTvMimguiPosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
+                    mimgui.SetNextWindowPos(
+                        mimgui.ImVec2(tonumber(cfg.interface.painel_tv_x) or 18,
+                            tonumber(cfg.interface.painel_tv_y) or 250),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
+                    )
+                    painelTvMimguiPosCarregada = true
+                end
+                if type(mimgui.SetNextWindowSize) == 'function' then
+                    mimgui.SetNextWindowSize(mimgui.ImVec2(345, 148),
+                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+                end
+
+                mimgui.Begin('SETOR TV##setor_mobile_tv', nil, flags)
+                local idAtual, levelAtual = dadosJogadorAtual()
+                mimgui.Text('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
+                mimgui.Text('ID: ' .. tostring(idAtual)
+                    .. '  |  RG: ' .. tostring(rgAtual or 'aguardando')
+                    .. '  |  LEVEL: ' .. tostring(levelAtual))
+                if type(mimgui.Separator) == 'function' then mimgui.Separator() end
+
+                if mimgui.Button('MENU', mimgui.ImVec2(72, 34)) then painelTvAcaoPendente = 'menu' end
+                mimgui.SameLine()
+                if mimgui.Button('PUNIR', mimgui.ImVec2(72, 34)) then painelTvAcaoPendente = 'punir' end
+                mimgui.SameLine()
+                if mimgui.Button('ACOES', mimgui.ImVec2(78, 34)) then painelTvAcaoPendente = 'acoes' end
+                mimgui.SameLine()
+                if mimgui.Button('TV OFF', mimgui.ImVec2(82, 34)) then painelTvAcaoPendente = 'off' end
+
+                if type(mimgui.GetWindowPos) == 'function' then
+                    local pos = mimgui.GetWindowPos()
+                    local px, py = math.floor(pos.x or 0), math.floor(pos.y or 0)
+                    if px ~= tonumber(cfg.interface.painel_tv_x) or py ~= tonumber(cfg.interface.painel_tv_y) then
+                        cfg.interface.painel_tv_x, cfg.interface.painel_tv_y = px, py
+                        local agora = os.clock and os.clock() or 0
+                        if agora - painelTvMimguiUltimoSave >= 1 then
+                            painelTvMimguiUltimoSave = agora
+                            inicfg.save(cfg, CONFIG_FILE)
+                        end
+                    end
+                end
+                mimgui.End()
+            end
+        )
+    end)
+    if not ok then
+        MIMGUI_OK = false
+        print('[SETOR MOBILE] mimgui indisponivel; usando painel visual: ' .. tostring(erro))
+        return false
+    end
+    return true
 end
 
 local function mostrarAjuda()
@@ -1204,6 +1276,7 @@ function main()
     cache = carregarTabela(CACHE_FILE)
     monitorados = carregarTabela(MONITOR_FILE)
     registrarComandos()
+    instalarPainelTvMimgui()
     chat('{3EDC81}', 'Mobile ' .. VERSION .. ' ativo. Use /la para identificar automaticamente nome e cargo.')
     chat('{A8B5C8}', '/configadm fica disponivel somente como configuracao de emergencia.')
     -- No Android, algumas builds do MonetLoader fecham o processo durante
