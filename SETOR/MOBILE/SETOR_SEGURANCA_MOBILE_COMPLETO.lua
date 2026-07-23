@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.27'
+local VERSION = '3.30'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -93,6 +93,19 @@ local suportePosCarregada, suporteUltimoSave = false, 0
 local emAtendimento, atendimentoNick, atendimentoRg = false, '', ''
 local atendimentoInicio = 0
 local atendimentoOffAte, atendimentoTempoFinal = 0, 0
+
+local function relogioAtendimento()
+    if type(getGameTimer) == 'function' then
+        local ok, valor = pcall(getGameTimer)
+        if ok and tonumber(valor) then return tonumber(valor) / 1000 end
+    end
+    if type(os.clock) == 'function' then return os.clock() end
+    return os.time()
+end
+
+local SACIARME_INTERVALO = 15 * 60
+local SACIARME_PRIMEIRO_ATRASO = 30
+local saciarmeProximo = 0
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -260,6 +273,8 @@ local function definirPerfil(nome, cargo, logado)
     if nome == '' or nivelCargo(cargo) == 0 then return false end
     cfg.dados.nome, cfg.dados.cargo = nome, cargo
     staffLogada = logado ~= false
+    saciarmeProximo = staffLogada
+        and (relogioAtendimento() + SACIARME_PRIMEIRO_ATRASO) or 0
     inicfg.save(cfg, CONFIG_FILE)
     return true
 end
@@ -733,7 +748,7 @@ local function instalarPainelTvMimgui()
 
         mimgui.OnFrame(
             function()
-                if atendimentoOffAte > 0 and os.time() > atendimentoOffAte then
+                if atendimentoOffAte > 0 and relogioAtendimento() > atendimentoOffAte then
                     atendimentoOffAte, atendimentoTempoFinal = 0, 0
                     atendimentoNick, atendimentoRg, atendimentoInicio = '', '', 0
                 end
@@ -766,7 +781,8 @@ local function instalarPainelTvMimgui()
                 mimgui.Text('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
                 mimgui.Text('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
                 local duracao = emAtendimento
-                    and math.max(0, os.time() - (tonumber(atendimentoInicio) or os.time()))
+                    and math.max(0, relogioAtendimento()
+                        - (tonumber(atendimentoInicio) or relogioAtendimento()))
                     or math.max(0, tonumber(atendimentoTempoFinal) or 0)
                 mimgui.Text(string.format('TEMPO: %02d:%02d', math.floor(duracao / 60), duracao % 60))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
@@ -1498,8 +1514,9 @@ function samp.onPlayerQuit(playerId, reason)
     local saiuAtendido = tostring(playerId) == tostring(atendimentoRg)
         or (nickSaida ~= '' and nickSaida:lower() == tostring(atendimentoNick):lower())
     if saiuAtendido then
-        atendimentoTempoFinal = math.max(0, os.time() - (tonumber(atendimentoInicio) or os.time()))
-        emAtendimento, atendimentoOffAte = false, os.time() + 5
+        atendimentoTempoFinal = math.max(0, relogioAtendimento()
+            - (tonumber(atendimentoInicio) or relogioAtendimento()))
+        emAtendimento, atendimentoOffAte = false, relogioAtendimento() + 5
         chat('{FF5555}', 'Atendimento encerrado: ' .. atendimentoNick .. ' desconectou.')
     end
 end
@@ -1779,6 +1796,7 @@ function samp.onSendCommand(command)
         painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         emAtendimento, atendimentoNick, atendimentoRg, atendimentoInicio = false, '', '', 0
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
+        saciarmeProximo = 0
         return
     end
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
@@ -1845,7 +1863,7 @@ function samp.onServerMessage(color, text)
     end
     if nomeAtendimento and rgAtendimento and staffLogada and moduloAtivo('atendimento') then
         atendimentoNick, atendimentoRg = nomeAtendimento, rgAtendimento
-        atendimentoInicio, emAtendimento = os.time(), true
+        atendimentoInicio, emAtendimento = relogioAtendimento(), true
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
     end
     if emAtendimento and (baixo:find('atendimento finalizado', 1, true)
@@ -1927,6 +1945,11 @@ function main()
     -- sob comando explicito: /setoratualizar.
     while true do
         wait(0)
+        if staffLogada and saciarmeProximo > 0
+            and relogioAtendimento() >= saciarmeProximo then
+            sampSendChat('/saciarme')
+            saciarmeProximo = relogioAtendimento() + SACIARME_INTERVALO
+        end
         local ok, erro = pcall(desenharPainelTvFlutuante)
         if not ok then
             painelTvFlutuante = false
