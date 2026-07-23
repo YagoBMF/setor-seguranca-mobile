@@ -477,6 +477,17 @@ local function normalizarMotivoPainel(valor)
     return tostring(valor or ""):upper():gsub("[^%w%s]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
 end
 
+local function aplicarNickImproprioKickBan(rg)
+    rg = tostring(rg or "")
+    if not rg:match("^%d+$") then return false end
+    lua_thread.create(function()
+        sampSendChat("/kick " .. rg .. " Nick improprio")
+        wait(1000)
+        sampSendChat("/ban " .. rg .. " Nick improprio")
+    end)
+    return true
+end
+
 local function tempoCadeiaPorLevel(motivo, tempoNormal)
     local level = tonumber(levelTelado)
     if level and level >= 0 and level <= 30 then
@@ -1146,7 +1157,11 @@ local function paineltv_OnDrawFrame()
                         sampSendChat("/kick " .. rgTelado .. " " .. motivoSel)
                     elseif comandoBase == "/ban" then
                         if tempoPunicao.v == 0 then
-                            sampSendChat("/ban " .. rgTelado .. " " .. motivoSel)
+                            if normalizarMotivoPainel(motivoSel) == "NICK IMPROPRIO" then
+                                aplicarNickImproprioKickBan(rgTelado)
+                            else
+                                sampSendChat("/ban " .. rgTelado .. " " .. motivoSel)
+                            end
                         else
                             sampSendChat("/bantemp " .. rgTelado .. " " .. tempoPunicao.v .. " " .. motivoSel)
                         end
@@ -6234,7 +6249,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.02",
+    versao = "2.03",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
