@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.47'
+local VERSION = '3.48'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -718,6 +718,11 @@ local function instalarPainelTvMimgui()
         end
     end
 
+    local escalasPaineis = {
+        painel_tv_escala = tonumber(cfg.interface.painel_tv_escala) or 1.0,
+        atendimento_escala = tonumber(cfg.interface.atendimento_escala) or 1.0,
+        suporte_escala = tonumber(cfg.interface.suporte_escala) or 1.0
+    }
     local ultimoToquePainel = {}
     local function alternarEscalaPainel(chave)
         if type(mimgui.IsWindowHovered) ~= 'function'
@@ -730,8 +735,9 @@ local function instalarPainelTvMimgui()
             ultimoToquePainel[chave] = agora
             if anterior <= 0 or agora - anterior > 0.55 then return end
             ultimoToquePainel[chave] = 0
-            local atual = tonumber(cfg.interface[chave]) or 1
+            local atual = tonumber(escalasPaineis[chave]) or 1
             local nova = atual < 0.9 and 1.0 or (atual < 1.1 and 1.2 or 0.8)
+            escalasPaineis[chave] = nova
             cfg.interface[chave] = nova
             if chave == 'painel_tv_escala' then
                 painelTvMimguiPosCarregada = false
@@ -741,7 +747,8 @@ local function instalarPainelTvMimgui()
                 suportePosCarregada = false
             end
             inicfg.save(cfg, CONFIG_FILE)
-            chat('{48C6FF}', 'Tamanho do painel: ' .. tostring(math.floor(nova * 100)) .. '%.')
+            chat('{48C6FF}', 'Tamanho do painel: ' .. tostring(math.floor(atual * 100))
+                .. '% -> ' .. tostring(math.floor(nova * 100)) .. '%.')
         end
     end
 
@@ -762,7 +769,7 @@ local function instalarPainelTvMimgui()
                     tonumber(cfg.interface.painel_tv_x) or 18,
                     tonumber(cfg.interface.painel_tv_y) or 250,
                     not painelTvMimguiPosCarregada,
-                    cfg.interface.painel_tv_escala)
+                    escalasPaineis.painel_tv_escala)
                 if not painelTvMimguiPosCarregada then
                     painelTvMimguiPosCarregada = true
                 end
@@ -826,7 +833,7 @@ local function instalarPainelTvMimgui()
                     tonumber(cfg.interface.atendimento_x) or 18,
                     tonumber(cfg.interface.atendimento_y) or 170,
                     not atendimentoPosCarregada,
-                    cfg.interface.atendimento_escala)
+                    escalasPaineis.atendimento_escala)
                 if not atendimentoPosCarregada then
                     atendimentoPosCarregada = true
                 end
@@ -892,7 +899,7 @@ local function instalarPainelTvMimgui()
                     tonumber(cfg.interface.suporte_x) or 18,
                     tonumber(cfg.interface.suporte_y) or 280,
                     not suportePosCarregada,
-                    cfg.interface.suporte_escala)
+                    escalasPaineis.suporte_escala)
                 if not suportePosCarregada then
                     suportePosCarregada = true
                 end
