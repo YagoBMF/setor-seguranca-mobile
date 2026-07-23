@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.48'
+local VERSION = '3.49'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -723,6 +723,9 @@ local function instalarPainelTvMimgui()
         atendimento_escala = tonumber(cfg.interface.atendimento_escala) or 1.0,
         suporte_escala = tonumber(cfg.interface.suporte_escala) or 1.0
     }
+    local reabrirPainelAte = {
+        painel_tv_escala = 0, atendimento_escala = 0, suporte_escala = 0
+    }
     local ultimoToquePainel = {}
     local function alternarEscalaPainel(chave)
         if type(mimgui.IsWindowHovered) ~= 'function'
@@ -739,6 +742,7 @@ local function instalarPainelTvMimgui()
             local nova = atual < 0.9 and 1.0 or (atual < 1.1 and 1.2 or 0.8)
             escalasPaineis[chave] = nova
             cfg.interface[chave] = nova
+            reabrirPainelAte[chave] = agora + 0.20
             if chave == 'painel_tv_escala' then
                 painelTvMimguiPosCarregada = false
             elseif chave == 'atendimento_escala' then
@@ -757,6 +761,7 @@ local function instalarPainelTvMimgui()
             function()
                 return painelTvFlutuante and staffLogada and moduloAtivo('painel_tv')
                     and cfg.interface.painel_tv_visivel ~= false
+                    and relogioAtendimento() >= reabrirPainelAte.painel_tv_escala
             end,
             function()
                 local flags = 0
@@ -821,6 +826,7 @@ local function instalarPainelTvMimgui()
         mimgui.OnFrame(
             function()
                 return staffLogada and moduloAtivo('atendimento')
+                    and relogioAtendimento() >= reabrirPainelAte.atendimento_escala
             end,
             function()
                 local flags = 0
@@ -887,6 +893,7 @@ local function instalarPainelTvMimgui()
                 end
                 return staffLogada and moduloAtivo('atendimento')
                     and (emAtendimento or atendimentoOffAte > 0)
+                    and relogioAtendimento() >= reabrirPainelAte.suporte_escala
             end,
             function()
                 local flags = 0
