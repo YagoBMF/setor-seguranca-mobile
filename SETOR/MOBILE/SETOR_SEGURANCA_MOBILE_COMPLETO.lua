@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.42'
+local VERSION = '3.43'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -78,6 +78,17 @@ if cfg.interface.correcao_posicao_342 ~= true then
         cfg.interface.suporte_x, cfg.interface.suporte_y = 18, 280
     end
     cfg.interface.correcao_posicao_342 = true
+end
+-- Restaura uma unica vez o layout afetado pela leitura de resolucao das
+-- versoes 3.40/3.42. Depois disso, posicao e tamanho voltam a ser livres.
+if cfg.interface.restauracao_layout_343 ~= true then
+    cfg.interface.painel_tv_x, cfg.interface.painel_tv_y = 18, 250
+    cfg.interface.atendimento_x, cfg.interface.atendimento_y = 18, 170
+    cfg.interface.suporte_x, cfg.interface.suporte_y = 18, 280
+    cfg.interface.painel_tv_escala = 1.0
+    cfg.interface.atendimento_escala = 1.0
+    cfg.interface.suporte_escala = 1.0
+    cfg.interface.restauracao_layout_343 = true
 end
 if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
 if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
@@ -678,46 +689,17 @@ end
 local function instalarPainelTvMimgui()
     if not MIMGUI_OK or type(mimgui.OnFrame) ~= 'function' then return false end
     local function dimensoesResponsivas(baseW, baseH, escalaEscolhida)
-        local telaW, telaH, telaValida = 100000, 100000, false
-        if type(getScreenResolution) == 'function' then
-            local okTela, w, h = pcall(getScreenResolution)
-            if okTela and tonumber(w) and tonumber(h)
-                and tonumber(w) > 100 and tonumber(h) > 100 then
-                telaW, telaH = tonumber(w), tonumber(h)
-                telaValida = true
-            end
-        end
-        if not telaValida and type(mimgui.GetIO) == 'function' then
-            local okIo, io = pcall(mimgui.GetIO)
-            if okIo and io and io.DisplaySize then
-                local ioW, ioH = tonumber(io.DisplaySize.x), tonumber(io.DisplaySize.y)
-                if ioW and ioH and ioW > 100 and ioH > 100 then
-                    telaW, telaH, telaValida = ioW, ioH, true
-                end
-            end
-        end
         local desejada = tonumber(escalaEscolhida) or 1
-        local escala = desejada
-        if telaValida then
-            escala = math.min(escala, (telaW - 20) / baseW, (telaH - 20) / baseH)
-        end
-        escala = math.max(0.68, math.min(1.2, escala))
-        return escala, telaW, telaH,
-            math.floor(baseW * escala + 0.5), math.floor(baseH * escala + 0.5),
-            telaValida
+        local escala = math.max(0.8, math.min(1.2, desejada))
+        return escala, math.floor(baseW * escala + 0.5),
+            math.floor(baseH * escala + 0.5)
     end
 
     local function prepararJanelaResponsiva(baseW, baseH, posX, posY, carregarPosicao, escalaEscolhida)
-        local escala, telaW, telaH, largura, altura, telaValida =
+        local escala, largura, altura =
             dimensoesResponsivas(baseW, baseH, escalaEscolhida)
         local x, y = tonumber(posX) or 0, tonumber(posY) or 0
-        if telaValida then
-            x = math.max(0, math.min(x, math.max(0, telaW - largura)))
-            y = math.max(0, math.min(y, math.max(0, telaH - altura)))
-        end
-        local foraDaTela = telaValida
-            and (x ~= tonumber(posX) or y ~= tonumber(posY))
-        if (carregarPosicao or foraDaTela) and type(mimgui.SetNextWindowPos) == 'function' then
+        if carregarPosicao and type(mimgui.SetNextWindowPos) == 'function' then
             mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
