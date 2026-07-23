@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.32'
+local VERSION = '3.33'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -464,6 +464,18 @@ local function listaJogadores(somenteNovatos)
     end
     table.sort(lista, function(a, b) return a.id < b.id end)
     return lista
+end
+
+local function jogadorOnlinePorNick(nick)
+    local busca = tostring(nick or ''):lower()
+    if busca == '' then return nil end
+    for id = 0, sampGetMaxPlayerId(false) do
+        if sampIsPlayerConnected(id) then
+            local nickTab = tostring(sampGetPlayerNickname(id) or '')
+            if nickTab:lower() == busca then return nickTab, id end
+        end
+    end
+    return nil
 end
 
 local function telarJogadorPelaTab(jogador)
@@ -1563,48 +1575,9 @@ local function processarRespostaReport(dialogId, button, listboxId, input)
         aguardandoReport = tonumber(button) == 1
         reportAte = aguardandoReport and ((os.clock and os.clock() or 0) + 15) or 0
         if aguardandoReport then
-            local indice, linhaEscolhida = 0, trim(input)
-            local jogadorConectado = false
-            local nickConectado = nil
-            if linhaEscolhida == '' then linhaEscolhida = nil end
-            for linha in tostring(reportDialogTexto or ''):gmatch('[^\r\n]+') do
-                if not linhaEscolhida and indice == (tonumber(listboxId) or -1) then
-                    linhaEscolhida = clean(linha)
-                    break
-                end
-                indice = indice + 1
-            end
-            if linhaEscolhida then
-                local nomeLinha, idLinha = linhaEscolhida:match('([%w_]+)%s*%[(%d+)%]')
-                idLinha = tonumber(idLinha)
-                if idLinha and sampIsPlayerConnected(idLinha) then
-                    nickConectado = tostring(sampGetPlayerNickname(idLinha) or nomeLinha or '')
-                    jogadorConectado = nickConectado ~= ''
-                end
-                if not jogadorConectado then
-                    local linhaBaixa = linhaEscolhida:lower()
-                    local nomeBaixo = tostring(nomeLinha or ''):lower()
-                    for id = 0, sampGetMaxPlayerId(false) do
-                        if sampIsPlayerConnected(id) then
-                            local nickTab = tostring(sampGetPlayerNickname(id) or '')
-                            local nickBaixo = nickTab:lower()
-                            if nickTab ~= '' and (nickBaixo == nomeBaixo
-                                or linhaBaixa:find(nickBaixo, 1, true)) then
-                                nickConectado, jogadorConectado = nickTab, true
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-            if jogadorConectado then
-                nickAtual, rgAtual = nickConectado, nil
-                painelTvFlutuante = true
-                enviarAvisoTelagemReport(nickAtual, 'reports')
-            else
-                aguardandoReport, reportAte = false, 0
-                chat('{FF5555}', 'Jogador desconectado ou nao encontrado no TAB. Telagem cancelada.')
-            end
+            -- A linha da lista pertence ao reportador. O alvo correto so sera
+            -- definido quando o servidor responder com as informacoes da telagem.
+            painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
         end
         reportDialogTexto = ''
         return true
@@ -1896,6 +1869,13 @@ function samp.onServerMessage(color, text)
     local ct = clean(text)
     local baixo = ct:lower()
 
+    if aguardandoReport and (baixo:find('jogador%(a%) desconectou%-se')
+        or baixo:find('jogador desconectou', 1, true)
+        or baixo:find('jogador offline', 1, true)) then
+        aguardandoReport, reportAte = false, 0
+        painelTvFlutuante, nickAtual, rgAtual = false, nil, nil
+    end
+
     local nomeAtendimento, rgAtendimento =
         ct:match('[Aa]tendendo o%(a%) jogador%(a%)%s+([%w_]+)%[(%d+)%]')
     if not nomeAtendimento then
@@ -1948,12 +1928,26 @@ function samp.onServerMessage(color, text)
     if not nick then nick, rg = ct:match('[Nn]ick[:%s]+([%w_]+).-RG[:%s]+(%d+)') end
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nome[:%s]+([%w_]+)') end
     if not nick then rg, nick = ct:match('RG[:%s]+(%d+).-Nick[:%s]+([%w_]+)') end
-    if nick and rg then salvarRG(rg, nick); rgAtual, nickAtual = rg, nick end
+    if nick and rg then
+        local nickOnline = jogadorOnlinePorNick(nick)
+        if not aguardandoReport or nickOnline then
+            nick = nickOnline or nick
+            salvarRG(rg, nick)
+            rgAtual, nickAtual = rg, nick
+            if aguardandoReport then
+                painelTvFlutuante = true
+                enviarAvisoTelagemReport(nickAtual, rgAtual)
+            end
+        end
+    end
     local tvNick, tvRg = ct:match('[Tt]elando.-([%w_]+).-RG[:%s]+(%d+)')
     if tvNick and tvRg then
-        salvarRG(tvRg, tvNick); rgAtual, nickAtual = tvRg, tvNick
-        painelTvFlutuante = true
-        enviarAvisoTelagemReport(tvNick, tvRg)
+        local tvNickOnline = jogadorOnlinePorNick(tvNick)
+        if tvNickOnline then
+            salvarRG(tvRg, tvNickOnline); rgAtual, nickAtual = tvRg, tvNickOnline
+            painelTvFlutuante = true
+            enviarAvisoTelagemReport(tvNickOnline, tvRg)
+        end
     end
 
     if pendente and ct:find('HZ%-ADMIN') then
