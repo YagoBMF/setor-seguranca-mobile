@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.43'
+local VERSION = '3.44'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -703,8 +703,11 @@ local function instalarPainelTvMimgui()
             mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
-        if type(mimgui.SetNextWindowSize) == 'function' then
-            mimgui.SetNextWindowSize(mimgui.ImVec2(largura, altura),
+        -- O tamanho e calculado pelo proprio mimgui conforme o conteudo.
+        -- Isso evita recortes causados por fontes/densidades diferentes.
+        if not (mimgui.WindowFlags and mimgui.WindowFlags.AlwaysAutoResize)
+            and type(mimgui.SetNextWindowSize) == 'function' then
+            mimgui.SetNextWindowSize(mimgui.ImVec2(largura + 30, altura + 25),
                 mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
         end
         return escala, x, y
@@ -748,6 +751,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala = prepararJanelaResponsiva(345, 190,
                     tonumber(cfg.interface.painel_tv_x) or 18,
@@ -808,6 +812,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala = prepararJanelaResponsiva(265, 92,
                     tonumber(cfg.interface.atendimento_x) or 18,
@@ -869,6 +874,7 @@ local function instalarPainelTvMimgui()
                     flags = (mimgui.WindowFlags.NoCollapse or 0)
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
+                        + (mimgui.WindowFlags.AlwaysAutoResize or 0)
                 end
                 local escala = prepararJanelaResponsiva(315, 150,
                     tonumber(cfg.interface.suporte_x) or 18,
