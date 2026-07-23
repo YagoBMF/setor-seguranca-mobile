@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.31'
+local VERSION = '3.32'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1563,8 +1563,9 @@ local function processarRespostaReport(dialogId, button, listboxId, input)
         aguardandoReport = tonumber(button) == 1
         reportAte = aguardandoReport and ((os.clock and os.clock() or 0) + 15) or 0
         if aguardandoReport then
-            painelTvFlutuante = true
             local indice, linhaEscolhida = 0, trim(input)
+            local jogadorConectado = false
+            local nickConectado = nil
             if linhaEscolhida == '' then linhaEscolhida = nil end
             for linha in tostring(reportDialogTexto or ''):gmatch('[^\r\n]+') do
                 if not linhaEscolhida and indice == (tonumber(listboxId) or -1) then
@@ -1577,26 +1578,32 @@ local function processarRespostaReport(dialogId, button, listboxId, input)
                 local nomeLinha, idLinha = linhaEscolhida:match('([%w_]+)%s*%[(%d+)%]')
                 idLinha = tonumber(idLinha)
                 if idLinha and sampIsPlayerConnected(idLinha) then
-                    nickAtual = tostring(sampGetPlayerNickname(idLinha) or nomeLinha or 'Aguardando servidor')
-                elseif nomeLinha and nomeLinha ~= '' then
-                    nickAtual = nomeLinha
-                else
+                    nickConectado = tostring(sampGetPlayerNickname(idLinha) or nomeLinha or '')
+                    jogadorConectado = nickConectado ~= ''
+                end
+                if not jogadorConectado then
                     local linhaBaixa = linhaEscolhida:lower()
+                    local nomeBaixo = tostring(nomeLinha or ''):lower()
                     for id = 0, sampGetMaxPlayerId(false) do
                         if sampIsPlayerConnected(id) then
                             local nickTab = tostring(sampGetPlayerNickname(id) or '')
-                            if nickTab ~= '' and linhaBaixa:find(nickTab:lower(), 1, true) then
-                                nickAtual = nickTab
+                            local nickBaixo = nickTab:lower()
+                            if nickTab ~= '' and (nickBaixo == nomeBaixo
+                                or linhaBaixa:find(nickBaixo, 1, true)) then
+                                nickConectado, jogadorConectado = nickTab, true
                                 break
                             end
                         end
                     end
                 end
             end
-            nickAtual = nickAtual or 'Aguardando servidor'
-            rgAtual = nil
-            if nickAtual ~= 'Aguardando servidor' and nickAtual ~= '?' then
+            if jogadorConectado then
+                nickAtual, rgAtual = nickConectado, nil
+                painelTvFlutuante = true
                 enviarAvisoTelagemReport(nickAtual, 'reports')
+            else
+                aguardandoReport, reportAte = false, 0
+                chat('{FF5555}', 'Jogador desconectado ou nao encontrado no TAB. Telagem cancelada.')
             end
         end
         reportDialogTexto = ''
