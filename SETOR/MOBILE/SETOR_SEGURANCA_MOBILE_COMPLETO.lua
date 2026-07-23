@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.11'
+local VERSION = '3.12'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -379,6 +379,25 @@ local function listaJogadores(somenteNovatos)
     return lista
 end
 
+local function telarJogadorPelaTab(jogador)
+    if not jogador or not jogador.id or not sampIsPlayerConnected(tonumber(jogador.id)) then
+        return chat('{FF5555}', 'Jogador nao esta mais conectado no TAB.')
+    end
+    if type(sampSendClickPlayer) ~= 'function' then
+        return chat('{FF5555}', 'Este MonetLoader nao oferece clique de jogador pelo TAB.')
+    end
+
+    nickAtual = tostring(jogador.nick or sampGetPlayerNickname(tonumber(jogador.id)) or '?')
+    -- Nao envia cache historico ao servidor: IDs podem ser reutilizados.
+    -- O RG correto sera capturado da resposta/textdraw desta telagem.
+    rgAtual = nil
+    painelTvFlutuante = true
+    aguardandoReport, reportDialogId, reportAte = false, -1, 0
+    sampSendClickPlayer(tonumber(jogador.id), 0)
+    chat('{48C6FF}', 'Telando ' .. nickAtual .. ' [ID ' .. tostring(jogador.id) .. '] pelo TAB.')
+    return true
+end
+
 local function navegar(novatos, direcao)
     if not exigirStaff('a navegacao TV') then return end
     if not moduloAtivo('navegacao_tv') then return chat('{FF5555}', 'Modulo de navegacao desativado ou bloqueado para o cargo.') end
@@ -386,12 +405,10 @@ local function navegar(novatos, direcao)
     if #lista == 0 then return chat('{FFFF00}', 'Nenhum jogador disponivel nessa lista.') end
     if novatos then
         navNovato = ((navNovato - 1 + direcao) % #lista) + 1
-        sampSendChat('/tv ' .. lista[navNovato].id)
-        chat('{48C6FF}', 'TV novatos: ' .. lista[navNovato].nick .. ' [ID ' .. lista[navNovato].id .. ']')
+        telarJogadorPelaTab(lista[navNovato])
     else
         navTodos = ((navTodos - 1 + direcao) % #lista) + 1
-        sampSendChat('/tv ' .. lista[navTodos].id)
-        chat('{48C6FF}', 'TV todos: ' .. lista[navTodos].nick .. ' [ID ' .. lista[navTodos].id .. ']')
+        telarJogadorPelaTab(lista[navTodos])
     end
 end
 
@@ -609,9 +626,8 @@ local function abrirSeletorTV(busca)
     -- Nome ou abreviacao que encontrou somente uma pessoa: tela imediatamente.
     if busca ~= '' and #jogadoresSeletorTV == 1 then
         local jogador = jogadoresSeletorTV[1]
-        nickAtual, rgAtual, painelTvFlutuante = jogador.nick, acharRG(jogador.nick), true
-        sampSendChat('/tv ' .. tostring(jogador.id))
-        return chat('{48C6FF}', 'Telando ' .. jogador.nick .. ' [ID ' .. jogador.id .. '] pelo TAB.')
+        telarJogadorPelaTab(jogador)
+        return
     end
     dialogo(D_SELETOR_TV, 'SETOR - SELECIONAR PLAYER', table.concat(linhas, '\n'), 'Telar', 'Cancelar', 2)
 end
@@ -1037,10 +1053,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     elseif dialogId == D_SELETOR_TV then
         local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
         if jogador then
-            local rg = acharRG(jogador.nick)
-            nickAtual, rgAtual, painelTvFlutuante = jogador.nick, rg, true
-            sampSendChat('/tv ' .. tostring(jogador.id))
-            chat('{48C6FF}', 'Telando ' .. jogador.nick .. ' [ID ' .. jogador.id .. '] pelo TAB.')
+            telarJogadorPelaTab(jogador)
         end
     elseif dialogId == D_MAIN then
         if listboxId == 0 then abrirTV()
@@ -1160,15 +1173,10 @@ function samp.onSendCommand(command)
         return false
     end
     if buscaTv and trim(buscaTv):match('^%d+$') then
-        local numero = tonumber(trim(buscaTv))
         painelTvFlutuante = true
-        if numero and sampIsPlayerConnected(numero) then
-            nickAtual = sampGetPlayerNickname(numero)
-            rgAtual = acharRG(nickAtual)
-        else
-            rgAtual = trim(buscaTv)
-            nickAtual = cache[rgAtual] and cache[rgAtual].nick or 'Aguardando servidor'
-        end
+        -- No Horizonte, numero digitado em /tv e RG, nunca o ID do TAB.
+        rgAtual = trim(buscaTv)
+        nickAtual = cache[rgAtual] and cache[rgAtual].nick or 'Aguardando servidor'
     end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
         reportDialogId, aguardandoReport = -2, false
