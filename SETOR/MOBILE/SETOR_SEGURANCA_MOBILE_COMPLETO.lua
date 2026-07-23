@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.13'
+local VERSION = '3.16'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -134,6 +134,41 @@ local PUNICOES_CADEIA = {
     {'Corrupcao', 'Corrupcao', 300},
     {'Dark RP', 'Dark RP', 300}
 }
+
+-- Tabelas do Painel TV. Estrutura: texto visual, motivo enviado, duracao em dias.
+_G.HZMobileTabelasPunicao = {
+    ban_permanente = {
+        {'Cheat', 'Cheat', 0}, {'Abuso de bug', 'Abuso de bug', 0},
+        {'Comercio ilegal', 'Comercio ilegal', 0}, {'Divulgacao', 'Divulgacao', 0},
+        {'Nick improprio', 'Nick improprio', 0}, {'Money farm', 'Money farm', 0},
+        {'Racismo', 'Racismo', 0}, {'Gordofobia', 'Gordofobia', 0}
+    },
+    ban_temporario = {
+        {'Cortar animacao | 15 dias', 'Cortar animacao', 15},
+        {'Handling | 5 dias', 'Handling', 5},
+        {'Animacao vantajosa | 5 dias', 'Animacao vantajosa', 5},
+        {'Anti-RP extremo | 10 dias', 'Anti-RP extremo', 10},
+        {'Anti-RP extremo | 15 dias', 'Anti-RP extremo', 15},
+        {'Anti-RP extremo | 20 dias', 'Anti-RP extremo', 20}
+    },
+    mute = {
+        {'MUCS - Restricao | 3 dias', 'MUCS - Restricao', 3},
+        {'MUC Atendimento | 3 dias', 'MUC Atendimento', 3},
+        {'MUC Duvida | 3 dias', 'MUC Duvida', 3},
+        {'MUC Missa | 3 dias', 'MUC Missa', 3},
+        {'MUC News | 3 dias', 'MUC News', 3},
+        {'MUC OLX | 3 dias', 'MUC OLX', 3},
+        {'MUC /Reportar | 3 dias', 'MUC /Reportar', 3},
+        {'MUC Anorg | 3 dias', 'MUC Anorg', 3},
+        {'MUC An | 3 dias', 'MUC An', 3},
+        {'Ofensa Staff/Servidor | 30 dias', 'Ofensa Staff/Servidor', 30},
+        {'Desrespeito | 3 dias', 'Desrespeito', 3},
+        {'Conteudo sexual | 3 dias', 'Conteudo sexual', 3},
+        {'Flood | 1 dia', 'Flood', 1}
+    }
+}
+_G.HZMobileTipoTabelaPunicao = 'cadeia'
+_G.HZMobileListaTabelaPunicao = PUNICOES_CADEIA
 
 local function chat(cor, texto)
     sampAddChatMessage(cor .. '[SETOR]: {FFFFFF}' .. tostring(texto), -1)
@@ -679,16 +714,29 @@ end
 local function abrirPunicoes()
     if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_PUNICOES, 'SETOR - PUNICOES',
-        'Tabela de cadeia\nBan permanente (manual)\nBan temporario (manual)\nCadeia manual\nMute (somente registro)',
+        'Tabela de cadeia\nTabela de ban permanente\nTabela de ban temporario\nTabela de mute',
         'Continuar', 'Voltar', 2)
 end
 
-local function abrirTabelaPunicoes()
+local function abrirTabelaPunicoes(tipo)
+    tipo = tipo or 'cadeia'
+    _G.HZMobileTipoTabelaPunicao = tipo
+    _G.HZMobileListaTabelaPunicao = tipo == 'cadeia' and PUNICOES_CADEIA
+        or (_G.HZMobileTabelasPunicao[tipo] or {})
     local linhas = {}
-    for i, item in ipairs(PUNICOES_CADEIA) do
-        linhas[i] = item[1] .. ' | ' .. tostring(item[3]) .. ' min'
+    for i, item in ipairs(_G.HZMobileListaTabelaPunicao) do
+        if tipo == 'cadeia' then
+            linhas[i] = item[1] .. ' | ' .. tostring(item[3]) .. ' min'
+        else
+            linhas[i] = item[1]
+        end
     end
-    dialogo(D_TABELA_PUNICAO, 'SETOR - TABELA DE CADEIA', table.concat(linhas, '\n'), 'Selecionar', 'Voltar', 2)
+    local titulos = {
+        cadeia='CADEIA', ban_permanente='BAN PERMANENTE',
+        ban_temporario='BAN TEMPORARIO', mute='MUTE'
+    }
+    dialogo(D_TABELA_PUNICAO, 'SETOR - TABELA ' .. (titulos[tipo] or 'PUNICAO'),
+        table.concat(linhas, '\n'), 'Selecionar', 'Voltar', 2)
 end
 
 local function levelDoRG(rg)
@@ -710,6 +758,23 @@ local function confirmarPunicaoTabela(rg)
         return chat('{FFFF00}', 'Informe um RG ou nome salvo no cache.')
     end
     local item = punicaoTabelaSelecionada
+    local tipoTabela = _G.HZMobileTipoTabelaPunicao or 'cadeia'
+    if tipoTabela ~= 'cadeia' then
+        local nomes = {
+            ban_permanente='BAN PERMANENTE', ban_temporario='BAN TEMPORARIO', mute='MUTE'
+        }
+        dialogAction = {
+            tipo='tabela_' .. tipoTabela, rg=rg,
+            nick=nickAtual, motivo=item[2], tempo=tonumber(item[3]) or 0
+        }
+        local tempoTexto = tipoTabela == 'ban_permanente' and 'Permanente'
+            or (tostring(item[3]) .. ' dia(s)')
+        dialogo(D_CONFIRMAR_TABELA, 'CONFIRMAR ' .. (nomes[tipoTabela] or 'PUNICAO'),
+            'Jogador: ' .. tostring(nickAtual or '?') .. '\nRG: ' .. rg
+                .. '\nMotivo: ' .. item[2] .. '\nTempo: ' .. tempoTexto,
+            'Aplicar', 'Cancelar', 0)
+        return
+    end
     local level = levelDoRG(rg)
     local tempo = tonumber(item[3]) or 0
     if level and level >= 0 and level <= 30 then
@@ -725,7 +790,7 @@ end
 local function abrirAcoes()
     if not moduloAtivo('acoes_staff') then return chat('{FF5555}', 'Acoes Staff desativadas ou bloqueadas para o cargo.') end
     dialogo(D_ACOES, 'SETOR - ACOES',
-        'Ir ate jogador\nTrazer jogador\nReviver jogador\nCongelar jogador\nDescongelar jogador\nPrender armas\nDefinir vida\nDefinir colete',
+        'Ir ate jogador\nTrazer jogador\nReviver jogador\nCongelar jogador\nDescongelar jogador\nPrender armas\nChecar jogador\nDefinir vida\nDefinir colete',
         'Continuar', 'Voltar', 2)
 end
 
@@ -812,7 +877,7 @@ local function executarAcaoDialogo(valor)
     local mapa = {
         ir={'ir','IR'}, trazer={'trazer','TRAZER'}, reviver={'reviver','REVIVER'},
         congelar={'congelar','CONGELAR'}, descongelar={'descongelar','DESCONGELAR'},
-        armas={'prenderarmas','PRENDERARMAS'}
+        armas={'prenderarmas','PRENDERARMAS'}, checar={'checar','CHECAR'}
     }
     local dados = mapa[acao]
     local rg = acharRG(valor) or trim(valor)
@@ -1042,6 +1107,18 @@ local function registrarComandos()
     end)
 end
 
+-- Captura tanto o clique manual no TAB quanto o clique enviado pela nossa
+-- lista de nomes. Assim o Painel TV nao depende do comando /tv para abrir.
+function samp.onSendClickPlayer(playerId, source)
+    if not staffLogada or not moduloAtivo('painel_tv') then return end
+    local id = tonumber(playerId)
+    if not id or not sampIsPlayerConnected(id) then return end
+    nickAtual = tostring(sampGetPlayerNickname(id) or '?')
+    rgAtual = nil
+    painelTvFlutuante = true
+    aguardandoReport, reportDialogId, reportAte = false, -1, 0
+end
+
 function samp.onShowTextDraw(id, data)
     if type(data) == 'table' then capturarHorarioServidor(data.text) end
 end
@@ -1148,11 +1225,11 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         end
     elseif dialogId == D_PUNICOES then
-        local tipos = {nil, 'ban', 'bantemp', 'cadeia', 'mute'}
-        if listboxId == 0 then abrirTabelaPunicoes()
-        elseif tipos[listboxId + 1] then pedirPunicao(tipos[listboxId + 1]) end
+        local tiposTabela = {'cadeia', 'ban_permanente', 'ban_temporario', 'mute'}
+        local tipoTabela = tiposTabela[listboxId + 1]
+        if tipoTabela then abrirTabelaPunicoes(tipoTabela) end
     elseif dialogId == D_TABELA_PUNICAO then
-        punicaoTabelaSelecionada = PUNICOES_CADEIA[listboxId + 1]
+        punicaoTabelaSelecionada = (_G.HZMobileListaTabelaPunicao or {})[listboxId + 1]
         if punicaoTabelaSelecionada then
             if rgAtual and tostring(rgAtual):match('^%d+$') then
                 confirmarPunicaoTabela(rgAtual)
@@ -1166,13 +1243,20 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if not moduloAtivo('painel_tv') then
             chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.')
             dialogAction = nil
-        elseif type(dialogAction) == 'table' and dialogAction.tipo == 'tabela' then
-            sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
-            dialogAction = nil
-            punicaoTabelaSelecionada = nil
+        elseif type(dialogAction) == 'table' then
+            if dialogAction.tipo == 'tabela' then
+                sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+            elseif dialogAction.tipo == 'tabela_ban_permanente' then
+                sampSendChat('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
+            elseif dialogAction.tipo == 'tabela_ban_temporario' then
+                sampSendChat('/bantemp ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+            elseif dialogAction.tipo == 'tabela_mute' then
+                sampSendChat('/mute ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
+            end
+            dialogAction, punicaoTabelaSelecionada = nil, nil
         end
     elseif dialogId == D_ACOES then
-        local acoes = {'ir', 'trazer', 'reviver', 'congelar', 'descongelar', 'armas', 'vida', 'colete'}
+        local acoes = {'ir', 'trazer', 'reviver', 'congelar', 'descongelar', 'armas', 'checar', 'vida', 'colete'}
         local acao = acoes[listboxId + 1]
         if acao == 'vida' or acao == 'colete' then
             pedirAcao(acao, rgAtual and 'Digite somente o valor\nExemplo: 100' or 'Digite: RG-ou-nome valor\nExemplo: 12345 100')
