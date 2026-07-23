@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.46'
+local VERSION = '3.47'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -733,6 +733,13 @@ local function instalarPainelTvMimgui()
             local atual = tonumber(cfg.interface[chave]) or 1
             local nova = atual < 0.9 and 1.0 or (atual < 1.1 and 1.2 or 0.8)
             cfg.interface[chave] = nova
+            if chave == 'painel_tv_escala' then
+                painelTvMimguiPosCarregada = false
+            elseif chave == 'atendimento_escala' then
+                atendimentoPosCarregada = false
+            elseif chave == 'suporte_escala' then
+                suportePosCarregada = false
+            end
             inicfg.save(cfg, CONFIG_FILE)
             chat('{48C6FF}', 'Tamanho do painel: ' .. tostring(math.floor(nova * 100)) .. '%.')
         end
@@ -760,7 +767,7 @@ local function instalarPainelTvMimgui()
                     painelTvMimguiPosCarregada = true
                 end
 
-                mimgui.Begin('SETOR TV##setor_mobile_tv', nil, flags)
+                mimgui.Begin('SETOR TV##setor_mobile_tv_' .. tostring(math.floor(escala * 100)), nil, flags)
                 if type(mimgui.SetWindowSize) == 'function' then
                     pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
@@ -824,7 +831,8 @@ local function instalarPainelTvMimgui()
                     atendimentoPosCarregada = true
                 end
 
-                mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento', nil, flags)
+                mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento_'
+                    .. tostring(math.floor(escala * 100)), nil, flags)
                 if type(mimgui.SetWindowSize) == 'function' then
                     pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
@@ -889,7 +897,8 @@ local function instalarPainelTvMimgui()
                     suportePosCarregada = true
                 end
 
-                mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte', nil, flags)
+                mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte_'
+                    .. tostring(math.floor(escala * 100)), nil, flags)
                 if type(mimgui.SetWindowSize) == 'function' then
                     pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
                         mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
