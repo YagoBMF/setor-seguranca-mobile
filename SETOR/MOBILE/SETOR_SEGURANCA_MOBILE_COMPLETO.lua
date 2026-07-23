@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '2.1'
+local VERSION = '2.5'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -42,6 +42,8 @@ local navNovato, navTodos = 0, 0
 local staffLogada = false
 local reportDialogId, aguardandoReport, reportAte = -1, false, 0
 local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
+local horarioServidor, horarioServidorEm = '--:--:--', 0
+local dataServidor = '--/--/--'
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -65,8 +67,10 @@ local D_INPUT_PUNICAO = 28016
 local D_TABELA_PUNICAO = 28017
 local D_INPUT_ALVO_TABELA = 28018
 local D_CONFIRMAR_TABELA = 28019
+local D_SELETOR_TV = 28020
 local dialogAction = nil
 local punicaoTabelaSelecionada = nil
+local jogadoresSeletorTV = {}
 
 -- Texto visual pode manter a sigla; o comando envia somente o motivo real.
 local PUNICOES_CADEIA = {
@@ -338,7 +342,45 @@ local function mostrarAjuda()
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
-    sampShowDialog(id, titulo, texto, botao1 or 'Selecionar', botao2 or 'Voltar', estilo or 2)
+    local hora = horarioServidor ~= '' and horarioServidor or '--:--:--'
+    sampShowDialog(id, titulo .. ' | ' .. dataServidor .. ' ' .. hora, texto, botao1 or 'Selecionar', botao2 or 'Voltar', estilo or 2)
+end
+
+local function abrirSeletorTV(busca)
+    if not staffLogada then return chat('{FF5555}', 'Entre na staff com /la antes de usar a telagem.') end
+    busca = trim(busca):lower()
+    jogadoresSeletorTV = {}
+    local linhas = {}
+    for _, jogador in ipairs(listaJogadores(false)) do
+        local nick = tostring(jogador.nick or '')
+        if busca == '' or nick:lower():find(busca, 1, true) then
+            jogadoresSeletorTV[#jogadoresSeletorTV + 1] = jogador
+            linhas[#linhas + 1] = string.format('%s\tID: %d\tLevel: %d', nick, jogador.id, jogador.level)
+        end
+    end
+    if #jogadoresSeletorTV == 0 then
+        return chat('{FFFF00}', 'Nenhum jogador encontrado para: ' .. busca)
+    end
+    dialogo(D_SELETOR_TV, 'SETOR - SELECIONAR PLAYER', table.concat(linhas, '\n'), 'Telar', 'Cancelar', 2)
+end
+
+local function capturarHorarioServidor(texto)
+    texto = clean(texto):gsub('_', ' '):gsub('%s+', ' ')
+    local baixo = texto:lower()
+    local temMes = baixo:match('jan') or baixo:match('fev') or baixo:match('mar') or baixo:match('abr')
+        or baixo:match('mai') or baixo:match('jun') or baixo:match('jul') or baixo:match('ago')
+        or baixo:match('set') or baixo:match('out') or baixo:match('nov') or baixo:match('dez')
+    local hora = texto:match('(%d%d?:%d%d:%d%d)')
+    if hora and texto:find(',', 1, true) and texto:match('%d%d%d%d') and temMes then
+        local meses = {jan=1, fev=2, mar=3, abr=4, mai=5, jun=6, jul=7, ago=8, set=9, out=10, nov=11, dez=12}
+        local dia, mesTxt, ano = baixo:match('(%d%d?)%s+([%a]+)%s+(%d%d%d%d)')
+        local mes = mesTxt and meses[mesTxt:sub(1, 3)] or nil
+        if dia and mes and ano then
+            dataServidor = string.format('%02d/%02d/%02d', tonumber(dia), mes, tonumber(ano) % 100)
+        end
+        horarioServidor = hora
+        horarioServidorEm = os.clock and os.clock() or 0
+    end
 end
 
 local function abrirPrincipal()
@@ -589,6 +631,22 @@ local function registrarComandos()
     end)
 end
 
+function samp.onShowTextDraw(id, data)
+    if type(data) == 'table' then capturarHorarioServidor(data.text) end
+end
+
+function samp.onTextDrawSetString(id, text)
+    capturarHorarioServidor(text)
+end
+
+function samp.onShowPlayerTextDraw(playerId, id, data)
+    if type(data) == 'table' then capturarHorarioServidor(data.text) end
+end
+
+function samp.onPlayerTextDrawSetString(playerId, id, text)
+    capturarHorarioServidor(text)
+end
+
 function samp.onShowDialog(dialogId, style, title, button1, button2, text)
     local agora = os.clock and os.clock() or 0
     if reportDialogId == -2 and agora <= reportAte then
@@ -604,7 +662,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         return
     end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > D_CONFIRMAR_TABELA then return end
+    if dialogId < D_MAIN or dialogId > D_SELETOR_TV then return end
 
     if button == 0 then
         if dialogId == D_MAIN then return false end
@@ -613,13 +671,23 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
            dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
             abrirPrincipal()
         elseif dialogId == D_TV or dialogId == D_PUNICOES or dialogId == D_TABELA_PUNICAO or dialogId == D_ACOES or
-               dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_MODULOS then
+               dialogId == D_RG or dialogId == D_MONITOR or dialogId == D_MODULOS or dialogId == D_SELETOR_TV then
             abrirPrincipal()
         end
         return false
     end
 
-    if dialogId == D_MAIN then
+    if dialogId == D_SELETOR_TV then
+        local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
+        if jogador then
+            local rg = acharRG(jogador.nick)
+            sampSendChat('/tv ' .. tostring(rg or jogador.id))
+            lua_thread.create(function()
+                wait(450)
+                if staffLogada then abrirTV() end
+            end)
+        end
+    elseif dialogId == D_MAIN then
         if listboxId == 0 then abrirTV()
         elseif listboxId == 1 then abrirPunicoes()
         elseif listboxId == 2 then abrirAcoes()
@@ -710,11 +778,20 @@ end
 function samp.onSendCommand(command)
     if not perfilOk() then return end
     local cmdLimpo = trim(command):lower()
+    local buscaTv = trim(command):match('^/tv%s+(.+)$')
+    if buscaTv and not trim(buscaTv):match('^%d+$') then
+        abrirSeletorTV(buscaTv)
+        return false
+    end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
         reportDialogId, aguardandoReport = -2, false
         reportAte = (os.clock and os.clock() or 0) + 60
     elseif cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        lua_thread.create(function()
+            wait(450)
+            if staffLogada then abrirTV() end
+        end)
     elseif cmdLimpo == '/da' or cmdLimpo == '/sairadm' or cmdLimpo == '/deslogaradm' then
         staffLogada = false
     end
@@ -797,11 +874,8 @@ function main()
     else
         chat('{FF5555}', 'Perfil nao configurado. Use /configadm Nome 1-5.')
     end
-    if not HAS_EXTERNAL_UPDATER then
-        lua_thread.create(function()
-            wait(4000)
-            verificarAtualizacao(true)
-        end)
-    end
+    -- No Android, algumas builds do MonetLoader fecham o processo durante
+    -- requisicoes automaticas na inicializacao. A atualizacao fica somente
+    -- sob comando explicito: /setoratualizar.
     wait(-1)
 end
