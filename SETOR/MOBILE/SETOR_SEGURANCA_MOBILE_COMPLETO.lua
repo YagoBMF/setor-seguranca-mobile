@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '3.3'
+local VERSION = '3.7'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -38,6 +38,7 @@ local WEBHOOKS = {
 
 local cfg = inicfg.load({
     dados = { nome = 'Vazio', cargo = 'Vazio' },
+    interface = { painel_tv_x = 18, painel_tv_y = 250, painel_tv_visivel = true },
     modulos = {
         painel_tv = true, navegacao_tv = true,
         monitoramento = true, acoes_staff = true, logs = true
@@ -46,11 +47,16 @@ local cfg = inicfg.load({
 
 -- Migra configuracoes das primeiras versoes sem perder escolhas do usuario.
 cfg.modulos = cfg.modulos or {}
+cfg.interface = cfg.interface or {}
+if cfg.interface.painel_tv_x == nil then cfg.interface.painel_tv_x = 18 end
+if cfg.interface.painel_tv_y == nil then cfg.interface.painel_tv_y = 250 end
+if cfg.interface.painel_tv_visivel == nil then cfg.interface.painel_tv_visivel = true end
 if cfg.modulos.navegacao_tv == nil then cfg.modulos.navegacao_tv = cfg.modulos.navegacao ~= false end
 if cfg.modulos.acoes_staff == nil then cfg.modulos.acoes_staff = cfg.modulos.atalhos ~= false end
 if cfg.modulos.painel_tv == nil then cfg.modulos.painel_tv = true end
 if cfg.modulos.monitoramento == nil then cfg.modulos.monitoramento = true end
-if cfg.modulos.logs == nil then cfg.modulos.logs = true end
+-- Logs sao obrigatorios para toda a staff e nao podem ser desativados.
+cfg.modulos.logs = true
 inicfg.save(cfg, CONFIG_FILE)
 
 local cache, monitorados = {}, {}
@@ -63,6 +69,10 @@ local reportDialogId, aguardandoReport, reportAte = -1, false, 0
 local ultimoAvisoReport, ultimoAvisoReportEm = '', 0
 local horarioServidor, horarioServidorEm = '--:--:--', 0
 local dataServidor = '--/--/--'
+local painelTvFlutuante = false
+local painelTvFonte, painelTvFonteTitulo = nil, nil
+local painelTvArrastando, painelTvOffsetX, painelTvOffsetY = false, 0, 0
+local painelTvToqueAnterior, painelTvAcaoPendente = false, nil
 
 local CARGOS = {
     ['1'] = 'Ajudante', ['2'] = 'Moderador', ['3'] = 'Administrador',
@@ -164,14 +174,13 @@ local MODULOS_INFO = {
     painel_tv = {'PAINEL TV', 'Telagem, status e menu TV.', 2},
     navegacao_tv = {'NAVEGACAO TV', 'Selecao e atalhos entre jogadores.', 2},
     monitoramento = {'MONITORAMENTO', 'Alertas e jogadores monitorados.', 3},
-    acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3},
-    logs = {'LOGS', 'Registros das acoes no Discord.', 1}
+    acoes_staff = {'ACOES STAFF', 'Comandos administrativos e atalhos.', 3}
 }
 
 local MODULOS_CATEGORIAS = {
     {'PAINEIS', 'Painel TV, telagem e punicoes.', {'painel_tv'}},
     {'NAVEGACAO', 'Selecao e navegacao de jogadores.', {'navegacao_tv'}},
-    {'FERRAMENTAS', 'Monitoramento, acoes e registros.', {'monitoramento', 'acoes_staff', 'logs'}}
+    {'FERRAMENTAS', 'Monitoramento e acoes administrativas.', {'monitoramento', 'acoes_staff'}}
 }
 
 local function moduloPermitido(id)
@@ -180,6 +189,7 @@ local function moduloPermitido(id)
 end
 
 local function moduloAtivo(id)
+    if id == 'logs' then return staffLogada == true end
     return moduloPermitido(id) and cfg.modulos[id] ~= false
 end
 
@@ -382,6 +392,87 @@ local function navegar(novatos, direcao)
     end
 end
 
+local function dadosJogadorAtual()
+    local idAtual, levelAtual = -1, '?'
+    if nickAtual then
+        for id = 0, sampGetMaxPlayerId(false) do
+            if sampIsPlayerConnected(id) and tostring(sampGetPlayerNickname(id)):lower() == tostring(nickAtual):lower() then
+                idAtual, levelAtual = id, tostring(sampGetPlayerScore(id) or '?')
+                break
+            end
+        end
+    end
+    return idAtual, levelAtual
+end
+
+local function desenharPainelTvFlutuante()
+    if not painelTvFlutuante or not staffLogada or not moduloAtivo('painel_tv')
+        or cfg.interface.painel_tv_visivel == false or not rgAtual then return end
+    if type(renderDrawBox) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
+
+    if not painelTvFonte and type(renderFontCreate) == 'function' then
+        painelTvFonte = renderFontCreate('Arial', 9, 5)
+        painelTvFonteTitulo = renderFontCreate('Arial', 10, 5)
+    end
+    if not painelTvFonte then return end
+
+    local x = tonumber(cfg.interface.painel_tv_x) or 18
+    local y = tonumber(cfg.interface.painel_tv_y) or 250
+    local w, h = 268, 108
+    local idAtual, levelAtual = dadosJogadorAtual()
+
+    -- Arraste pela faixa superior quando o cursor do jogo estiver disponível.
+    if type(getCursorPos) == 'function' and type(isKeyDown) == 'function' then
+        local mx, my = getCursorPos()
+        local pressionado = isKeyDown(1)
+        if pressionado and not painelTvArrastando and mx >= x and mx <= x + w and my >= y and my <= y + 24 then
+            painelTvArrastando, painelTvOffsetX, painelTvOffsetY = true, mx - x, my - y
+        elseif painelTvArrastando and pressionado then
+            cfg.interface.painel_tv_x = math.max(0, math.floor(mx - painelTvOffsetX))
+            cfg.interface.painel_tv_y = math.max(0, math.floor(my - painelTvOffsetY))
+            x, y = cfg.interface.painel_tv_x, cfg.interface.painel_tv_y
+        elseif painelTvArrastando and not pressionado then
+            painelTvArrastando = false
+            inicfg.save(cfg, CONFIG_FILE)
+        end
+
+        -- No mobile, um toque nos botoes executa a acao sem exigir comandos.
+        if pressionado and not painelTvToqueAnterior and not painelTvArrastando
+            and my >= y + 76 and my <= y + 101 then
+            if mx >= x + 9 and mx <= x + 67 then
+                painelTvAcaoPendente = 'menu'
+            elseif mx >= x + 72 and mx <= x + 130 then
+                painelTvAcaoPendente = 'punir'
+            elseif mx >= x + 135 and mx <= x + 202 then
+                painelTvAcaoPendente = 'acoes'
+            elseif mx >= x + 207 and mx <= x + 259 then
+                painelTvAcaoPendente = 'off'
+            end
+        end
+        painelTvToqueAnterior = pressionado
+    end
+
+    renderDrawBox(x + 3, y + 4, w, h, 0x66000000)
+    renderDrawBox(x, y, w, h, 0xDD07101A)
+    renderDrawBox(x, y, 4, h, 0xFF19AEEA)
+    renderDrawBox(x, y, w, 24, 0xF0122635)
+    renderDrawBox(x, y + 23, w, 1, 0xFF1588B8)
+    renderFontDrawText(painelTvFonteTitulo or painelTvFonte, '{48C6FF}SETOR TV  {A8B5C8}| arraste aqui', x + 11, y + 5, 0xFFFFFFFF)
+    renderFontDrawText(painelTvFonte, '{A8B5C8}NICK: {FFFFFF}' .. tostring(nickAtual or '?'), x + 11, y + 30, 0xFFFFFFFF)
+    renderFontDrawText(painelTvFonte,
+        '{A8B5C8}ID: {FFFFFF}' .. tostring(idAtual) .. '  {A8B5C8}| RG: {FFFFFF}' .. tostring(rgAtual)
+            .. '  {A8B5C8}| LEVEL: {FFFFFF}' .. tostring(levelAtual),
+        x + 11, y + 46, 0xFFFFFFFF)
+    renderDrawBox(x + 9, y + 76, 58, 25, 0xEE126A91)
+    renderDrawBox(x + 72, y + 76, 58, 25, 0xEE8E2633)
+    renderDrawBox(x + 135, y + 76, 67, 25, 0xEE126A91)
+    renderDrawBox(x + 207, y + 76, 52, 25, 0xEE751D2B)
+    renderFontDrawText(painelTvFonte, '{FFFFFF}MENU', x + 20, y + 82, 0xFFFFFFFF)
+    renderFontDrawText(painelTvFonte, '{FFFFFF}PUNIR', x + 81, y + 82, 0xFFFFFFFF)
+    renderFontDrawText(painelTvFonte, '{FFFFFF}ACOES', x + 146, y + 82, 0xFFFFFFFF)
+    renderFontDrawText(painelTvFonte, '{FFFFFF}OFF', x + 221, y + 82, 0xFFFFFFFF)
+end
+
 local function mostrarAjuda()
     chat('{48C6FF}', 'Mobile ' .. VERSION .. ' | Perfil: /configadm Nome 1-5')
     chat('{48C6FF}', '/rgnome nome | /rgatual | /rgcache | /rgdel RG')
@@ -389,7 +480,7 @@ local function mostrarAjuda()
     chat('{48C6FF}', '/tvn /tvnvoltar (novatos) | /tva /tavoltar (todos) | /tvoff')
     chat('{48C6FF}', '/setorir RG | /setortrazer RG | /setorvida RG valor | /setorcolete RG valor')
     chat('{48C6FF}', '/setorreviver RG | /setorcongelar RG | /setordescongelar RG | /setorarmas RG')
-    chat('{48C6FF}', '/mods | /modulo logs|monitoramento|navegacao|atalhos on|off')
+    chat('{48C6FF}', '/mods | /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
 end
 
 local function dialogo(id, titulo, texto, botao1, botao2, estilo)
@@ -397,6 +488,13 @@ local function dialogo(id, titulo, texto, botao1, botao2, estilo)
     sampShowDialog(id, titulo .. ' | ' .. dataServidor .. ' ' .. hora, texto, botao1 or 'Selecionar', botao2 or 'Voltar', estilo or 2)
     -- Igual ao PC: permite que dialogos locais entreguem a escolha ao callback.
     -- O onSendDialogResponse retorna false e impede o RPC de chegar ao servidor.
+    if type(sampSetDialogClientside) == 'function' then
+        sampSetDialogClientside(false)
+    end
+end
+
+local function dialogoMods(id, titulo, texto, botao1, botao2)
+    sampShowDialog(id, titulo, texto, botao1, botao2, 2)
     if type(sampSetDialogClientside) == 'function' then
         sampSetDialogClientside(false)
     end
@@ -449,7 +547,7 @@ end
 local function abrirTV()
     if not moduloAtivo('painel_tv') then return chat('{FF5555}', 'Painel TV desativado ou bloqueado para o cargo.') end
     dialogo(D_TV, 'SETOR - TV / TELAGEM',
-        'Proximo novato\nNovato anterior\nProximo jogador\nJogador anterior\nDesligar TV\nMostrar RG atual',
+        'Punicoes do jogador\nAcoes administrativas\nMonitoramento\nProximo novato\nNovato anterior\nProximo jogador\nJogador anterior\nMostrar jogador e RG\nDesligar TV',
         'Executar', 'Voltar', 2)
 end
 
@@ -529,9 +627,9 @@ local function abrirModulos(categoriaNome)
             for _, id in ipairs(categoria[3]) do if moduloAtivo(id) then ativos = ativos + 1 end end
             linhas[#linhas + 1] = string.format('{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s', categoria[1], ativos, #categoria[3], categoria[2])
         end
-        dialogo(D_MODULOS,
+        dialogoMods(D_MODULOS,
             'SETOR ADVANCED | CATEGORIAS | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
-            table.concat(linhas, '\n'), 'ABRIR', 'FECHAR', 2)
+            table.concat(linhas, '\n'), 'ABRIR', 'FECHAR')
         return
     end
     local ids = {}
@@ -546,9 +644,9 @@ local function abrirModulos(categoriaNome)
         else estado, cor = 'DESATIVADO', '{FFB347}' end
         linhas[#linhas + 1] = string.format('{FFFFFF}%s  %s[%s]{A8B5C8} - %s', info[1], cor, estado, info[2])
     end
-    dialogo(D_MOD_CATEGORIA,
+    dialogoMods(D_MOD_CATEGORIA,
         'SETOR ADVANCED | ' .. categoriaNome .. ' | ' .. tostring(cfg.dados.nome) .. ' - ' .. tostring(cfg.dados.cargo),
-        table.concat(linhas, '\n'), 'ALTERAR', 'VOLTAR', 2)
+        table.concat(linhas, '\n'), 'ALTERAR', 'VOLTAR')
 end
 
 local function pedirAcao(acao, instrucao)
@@ -643,13 +741,33 @@ local function registrarComandos()
         end
         abrirModulos()
     end)
+    sampRegisterChatCommand('tvpainel', function()
+        if not exigirStaff('/tvpainel') then return end
+        if not rgAtual then return chat('{FFFF00}', 'Tele um jogador antes de abrir o Painel TV.') end
+        abrirTV()
+    end)
+    sampRegisterChatCommand('tvhud', function()
+        if not exigirStaff('/tvhud') then return end
+        cfg.interface.painel_tv_visivel = cfg.interface.painel_tv_visivel == false
+        inicfg.save(cfg, CONFIG_FILE)
+        chat('{48C6FF}', 'Painel flutuante ' .. (cfg.interface.painel_tv_visivel and 'ativado.' or 'ocultado.'))
+    end)
+    sampRegisterChatCommand('tvpos', function(arg)
+        if not exigirStaff('/tvpos') then return end
+        local x, y = trim(arg):match('^(%d+)%s+(%d+)$')
+        if not x then return chat('{FFFF00}', 'Use /tvpos X Y. Exemplo: /tvpos 20 250') end
+        cfg.interface.painel_tv_x, cfg.interface.painel_tv_y = tonumber(x), tonumber(y)
+        inicfg.save(cfg, CONFIG_FILE)
+        chat('{48C6FF}', 'Posicao do Painel TV salva.')
+    end)
     sampRegisterChatCommand('modulo', function(arg)
         if not exigirStaff('/modulo') then return end
         local nome, estado = trim(arg):match('^(%S+)%s+(on|off)$')
         if nome == 'navegacao' then nome = 'navegacao_tv' end
         if nome == 'atalhos' then nome = 'acoes_staff' end
+        if nome == 'logs' then return chat('{FF5555}', 'Logs sao obrigatorios e permanecem sempre ativos.') end
         if not nome or not MODULOS_INFO[nome] then
-            return chat('{FFFF00}', 'Use /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff|logs on|off')
+            return chat('{FFFF00}', 'Use /modulo painel_tv|navegacao_tv|monitoramento|acoes_staff on|off')
         end
         if not moduloPermitido(nome) then return chat('{FF5555}', 'Modulo bloqueado para o seu cargo.') end
         cfg.modulos[nome] = estado == 'on'
@@ -780,6 +898,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
 
     if button == 0 then
         if dialogId == D_MAIN then return false end
+        if dialogId == D_TV then return false end
         if dialogId == D_MODULOS then return false end
         if dialogId == D_MOD_CATEGORIA then
             lua_thread.create(function() wait(150) abrirModulos() end)
@@ -822,10 +941,6 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if jogador then
             local rg = acharRG(jogador.nick)
             sampSendChat('/tv ' .. tostring(rg or jogador.id))
-            lua_thread.create(function()
-                wait(450)
-                if staffLogada then abrirTV() end
-            end)
         end
     elseif dialogId == D_MAIN then
         if listboxId == 0 then abrirTV()
@@ -836,15 +951,19 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         elseif listboxId == 5 then abrirModulos()
         elseif listboxId == 6 then mostrarAjuda() abrirPrincipal() end
     elseif dialogId == D_TV then
-        if listboxId == 0 then navegar(true, 1)
-        elseif listboxId == 1 then navegar(true, -1)
-        elseif listboxId == 2 then navegar(false, 1)
-        elseif listboxId == 3 then navegar(false, -1)
-        elseif listboxId == 4 then sampSendChat('/tvoff')
-        elseif listboxId == 5 then
+        if listboxId == 0 then abrirPunicoes() return false
+        elseif listboxId == 1 then abrirAcoes() return false
+        elseif listboxId == 2 then abrirMonitor() return false
+        elseif listboxId == 3 then navegar(true, 1)
+        elseif listboxId == 4 then navegar(true, -1)
+        elseif listboxId == 5 then navegar(false, 1)
+        elseif listboxId == 6 then navegar(false, -1)
+        elseif listboxId == 7 then
             if rgAtual then chat('{3EDC81}', (nickAtual or '?') .. ' - RG ' .. rgAtual) else chat('{FFFF00}', 'Nenhum RG atual identificado.') end
+        elseif listboxId == 8 then
+            sampSendChat('/tvoff')
+            painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         end
-        lua_thread.create(function() wait(150) abrirTV() end)
     elseif dialogId == D_PUNICOES then
         local tipos = {nil, 'ban', 'bantemp', 'cadeia', 'mute'}
         if listboxId == 0 then abrirTabelaPunicoes()
@@ -925,6 +1044,7 @@ function samp.onSendCommand(command)
         loginStaffPendenteAte = 0
         dialogAction = nil
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
+        painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
         return
     end
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
@@ -940,10 +1060,8 @@ function samp.onSendCommand(command)
         reportAte = (os.clock and os.clock() or 0) + 60
     elseif cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
-        lua_thread.create(function()
-            wait(450)
-            if staffLogada then abrirTV() end
-        end)
+    elseif cmdLimpo == '/tvoff' then
+        painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
     end
     local rg, motivo = command:match('^/ban%s+(%d+)%s+(.+)')
     if rg then pendente = {rg=rg, tempo='Permanente', motivo=motivo, tipo='BAN'} return end
@@ -1009,6 +1127,7 @@ function samp.onServerMessage(color, text)
     local tvNick, tvRg = ct:match('[Tt]elando.-([%w_]+).-RG[:%s]+(%d+)')
     if tvNick and tvRg then
         salvarRG(tvRg, tvNick); rgAtual, nickAtual = tvRg, tvNick
+        painelTvFlutuante = true
         local agora = os.clock and os.clock() or 0
         if aguardandoReport and agora <= reportAte then
             local chave = tvNick:lower() .. '|' .. tvRg
@@ -1047,5 +1166,26 @@ function main()
     -- No Android, algumas builds do MonetLoader fecham o processo durante
     -- requisicoes automaticas na inicializacao. A atualizacao fica somente
     -- sob comando explicito: /setoratualizar.
-    wait(-1)
+    while true do
+        wait(0)
+        local ok, erro = pcall(desenharPainelTvFlutuante)
+        if not ok then
+            painelTvFlutuante = false
+            print('[SETOR MOBILE] Painel TV flutuante desativado por incompatibilidade: ' .. tostring(erro))
+        end
+        if painelTvAcaoPendente then
+            local acao = painelTvAcaoPendente
+            painelTvAcaoPendente = nil
+            if acao == 'menu' then
+                abrirTV()
+            elseif acao == 'punir' then
+                abrirPunicoes()
+            elseif acao == 'acoes' then
+                abrirAcoes()
+            elseif acao == 'off' then
+                sampSendChat('/tvoff')
+                painelTvFlutuante, rgAtual, nickAtual = false, nil, nil
+            end
+        end
+    end
 end
