@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.39'
+local VERSION = '3.40'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -659,6 +659,42 @@ end
 
 local function instalarPainelTvMimgui()
     if not MIMGUI_OK or type(mimgui.OnFrame) ~= 'function' then return false end
+    local function dimensoesResponsivas(baseW, baseH)
+        local telaW, telaH = baseW + 24, baseH + 24
+        if type(mimgui.GetIO) == 'function' then
+            local okIo, io = pcall(mimgui.GetIO)
+            if okIo and io and io.DisplaySize then
+                telaW = tonumber(io.DisplaySize.x) or telaW
+                telaH = tonumber(io.DisplaySize.y) or telaH
+            end
+        end
+        local escala = math.min(1, (telaW - 20) / baseW, (telaH - 20) / baseH)
+        escala = math.max(0.68, math.min(1, escala))
+        return escala, telaW, telaH,
+            math.floor(baseW * escala + 0.5), math.floor(baseH * escala + 0.5)
+    end
+
+    local function prepararJanelaResponsiva(baseW, baseH, posX, posY, carregarPosicao)
+        local escala, telaW, telaH, largura, altura = dimensoesResponsivas(baseW, baseH)
+        local x = math.max(0, math.min(tonumber(posX) or 0, math.max(0, telaW - largura)))
+        local y = math.max(0, math.min(tonumber(posY) or 0, math.max(0, telaH - altura)))
+        if carregarPosicao and type(mimgui.SetNextWindowPos) == 'function' then
+            mimgui.SetNextWindowPos(mimgui.ImVec2(x, y),
+                mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+        end
+        if type(mimgui.SetNextWindowSize) == 'function' then
+            mimgui.SetNextWindowSize(mimgui.ImVec2(largura, altura),
+                mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+        end
+        return escala, x, y
+    end
+
+    local function escalarFonteJanela(escala)
+        if type(mimgui.SetWindowFontScale) == 'function' then
+            pcall(mimgui.SetWindowFontScale, escala)
+        end
+    end
+
     local ok, erro = pcall(function()
         mimgui.OnFrame(
             function()
@@ -672,20 +708,16 @@ local function instalarPainelTvMimgui()
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
                 end
-                if not painelTvMimguiPosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
-                    mimgui.SetNextWindowPos(
-                        mimgui.ImVec2(tonumber(cfg.interface.painel_tv_x) or 18,
-                            tonumber(cfg.interface.painel_tv_y) or 250),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
-                    )
+                local escala = prepararJanelaResponsiva(345, 190,
+                    tonumber(cfg.interface.painel_tv_x) or 18,
+                    tonumber(cfg.interface.painel_tv_y) or 250,
+                    not painelTvMimguiPosCarregada)
+                if not painelTvMimguiPosCarregada then
                     painelTvMimguiPosCarregada = true
-                end
-                if type(mimgui.SetNextWindowSize) == 'function' then
-                    mimgui.SetNextWindowSize(mimgui.ImVec2(345, 190),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
 
                 mimgui.Begin('SETOR TV##setor_mobile_tv', nil, flags)
+                escalarFonteJanela(escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
                 mimgui.Text('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
                 mimgui.Text('ID: ' .. tostring(idAtual)
@@ -696,14 +728,14 @@ local function instalarPainelTvMimgui()
                     or 'MONITORAMENTO: nao monitorado')
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
 
-                if mimgui.Button('MENU', mimgui.ImVec2(72, 34)) then painelTvAcaoPendente = 'menu' end
-                mimgui.SameLine()
-                if mimgui.Button('PUNIR', mimgui.ImVec2(72, 34)) then painelTvAcaoPendente = 'punir' end
-                mimgui.SameLine()
-                if mimgui.Button('ACOES', mimgui.ImVec2(78, 34)) then painelTvAcaoPendente = 'acoes' end
-                mimgui.SameLine()
-                if mimgui.Button('TV OFF', mimgui.ImVec2(82, 34)) then painelTvAcaoPendente = 'off' end
-                if mimgui.Button('MONITORAMENTO', mimgui.ImVec2(330, 32)) then
+                if mimgui.Button('MENU', mimgui.ImVec2(72 * escala, 34 * escala)) then painelTvAcaoPendente = 'menu' end
+                mimgui.SameLine(0, 3 * escala)
+                if mimgui.Button('PUNIR', mimgui.ImVec2(72 * escala, 34 * escala)) then painelTvAcaoPendente = 'punir' end
+                mimgui.SameLine(0, 3 * escala)
+                if mimgui.Button('ACOES', mimgui.ImVec2(78 * escala, 34 * escala)) then painelTvAcaoPendente = 'acoes' end
+                mimgui.SameLine(0, 3 * escala)
+                if mimgui.Button('TV OFF', mimgui.ImVec2(82 * escala, 34 * escala)) then painelTvAcaoPendente = 'off' end
+                if mimgui.Button('MONITORAMENTO', mimgui.ImVec2(330 * escala, 32 * escala)) then
                     painelTvAcaoPendente = 'monitor'
                 end
 
@@ -734,32 +766,28 @@ local function instalarPainelTvMimgui()
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
                 end
-                if not atendimentoPosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
-                    mimgui.SetNextWindowPos(
-                        mimgui.ImVec2(tonumber(cfg.interface.atendimento_x) or 18,
-                            tonumber(cfg.interface.atendimento_y) or 170),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
-                    )
+                local escala = prepararJanelaResponsiva(265, 92,
+                    tonumber(cfg.interface.atendimento_x) or 18,
+                    tonumber(cfg.interface.atendimento_y) or 170,
+                    not atendimentoPosCarregada)
+                if not atendimentoPosCarregada then
                     atendimentoPosCarregada = true
-                end
-                if type(mimgui.SetNextWindowSize) == 'function' then
-                    mimgui.SetNextWindowSize(mimgui.ImVec2(265, 92),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
 
                 mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento', nil, flags)
+                escalarFonteJanela(escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
                 if nivel >= 2 then
-                    if mimgui.Button('/REPORTS', mimgui.ImVec2(112, 38)) then
+                    if mimgui.Button('/REPORTS', mimgui.ImVec2(112 * escala, 38 * escala)) then
                         prepararAberturaReports()
                         sampSendChat('/reports')
                     end
-                    mimgui.SameLine()
-                    if mimgui.Button('/FILA', mimgui.ImVec2(112, 38)) then
+                    mimgui.SameLine(0, 3 * escala)
+                    if mimgui.Button('/FILA', mimgui.ImVec2(112 * escala, 38 * escala)) then
                         sampSendChat('/fila')
                     end
                 else
-                    if mimgui.Button('/FILA', mimgui.ImVec2(235, 38)) then
+                    if mimgui.Button('/FILA', mimgui.ImVec2(235 * escala, 38 * escala)) then
                         sampSendChat('/fila')
                     end
                 end
@@ -797,27 +825,23 @@ local function instalarPainelTvMimgui()
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
                 end
-                if not suportePosCarregada and type(mimgui.SetNextWindowPos) == 'function' then
-                    mimgui.SetNextWindowPos(
-                        mimgui.ImVec2(tonumber(cfg.interface.suporte_x) or 18,
-                            tonumber(cfg.interface.suporte_y) or 280),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0
-                    )
+                local escala = prepararJanelaResponsiva(315, 150,
+                    tonumber(cfg.interface.suporte_x) or 18,
+                    tonumber(cfg.interface.suporte_y) or 280,
+                    not suportePosCarregada)
+                if not suportePosCarregada then
                     suportePosCarregada = true
-                end
-                if type(mimgui.SetNextWindowSize) == 'function' then
-                    mimgui.SetNextWindowSize(mimgui.ImVec2(315, 150),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
                 end
 
                 mimgui.Begin('SUPORTE ATIVO##setor_mobile_suporte', nil, flags)
+                escalarFonteJanela(escala)
                 mimgui.Text('STATUS: ' .. (emAtendimento and 'ON' or 'OFF'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
                 mimgui.Text('JOGADOR: ' .. tostring(atendimentoNick ~= '' and atendimentoNick or '?'))
                 mimgui.Text('RG: ' .. tostring(atendimentoRg ~= '' and atendimentoRg or '?'))
                 if type(mimgui.Separator) == 'function' then mimgui.Separator() end
                 if emAtendimento then
-                    if mimgui.Button('FINALIZAR /FA', mimgui.ImVec2(285, 38)) then
+                    if mimgui.Button('FINALIZAR /FA', mimgui.ImVec2(285 * escala, 38 * escala)) then
                         sampSendChat('/fa')
                         emAtendimento = false
                     end
