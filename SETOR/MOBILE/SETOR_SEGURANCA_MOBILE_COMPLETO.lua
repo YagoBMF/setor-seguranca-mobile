@@ -5,12 +5,18 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '3.0'
+local VERSION = '3.1'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
-local UPDATE_VERSION_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/versao.txt'
-local UPDATE_SCRIPT_URL = 'https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/MOBILE/SETOR_SEGURANCA_MOBILE_COMPLETO.lua'
+local UPDATE_API_BASE = 'https://api.github.com/repos/YagoBMF/setor-advanced/contents/SETOR/MOBILE/'
+local UPDATE_VERSION_URL = UPDATE_API_BASE .. 'versao.txt?ref=main'
+local UPDATE_SCRIPT_URL = UPDATE_API_BASE .. 'SETOR_SEGURANCA_MOBILE_COMPLETO.lua?ref=main'
+local UPDATE_GITHUB_OPTIONS = {headers = {
+    ['Accept'] = 'application/vnd.github.raw+json',
+    ['User-Agent'] = 'Setor-Mobile-Updater',
+    ['X-GitHub-Api-Version'] = '2022-11-28'
+}}
 local EXTERNAL_UPDATER_PATH = (type(getWorkingDirectory) == 'function' and getWorkingDirectory() or '.') .. '/SETOR_MOBILE_UPDATER.lua'
 local HAS_EXTERNAL_UPDATER = type(doesFileExist) == 'function' and doesFileExist(EXTERNAL_UPDATER_PATH)
 
@@ -204,7 +210,7 @@ local function versaoMaior(remota, localAtual)
 end
 
 local function obterVersaoRemota()
-    local ok, res = pcall(requests.get, UPDATE_VERSION_URL)
+    local ok, res = pcall(requests.get, UPDATE_VERSION_URL, UPDATE_GITHUB_OPTIONS)
     if not ok then return nil end
     local body = responseBody(res)
     return body and trim(body):match('([%d%.]+)') or nil
@@ -241,7 +247,7 @@ local function instalarAtualizacao()
         if not remota then return chat('{FF5555}', 'Falha ao consultar a versao remota.') end
         if not versaoMaior(remota, VERSION) then return chat('{3EDC81}', 'Nenhuma atualizacao disponivel.') end
 
-        local ok, res = pcall(requests.get, UPDATE_SCRIPT_URL)
+        local ok, res = pcall(requests.get, UPDATE_SCRIPT_URL, UPDATE_GITHUB_OPTIONS)
         local novo = ok and responseBody(res) or nil
         if not novo or #novo < 5000 or not novo:find('SETOR SEGURANCA %- MOBILE') then
             return chat('{FF5555}', 'Arquivo remoto invalido. Atualizacao cancelada.')
@@ -770,7 +776,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     if button == 0 then
         if dialogId == D_MAIN then return false end
         if dialogId == D_MODULOS then return false end
-        if dialogId == D_MOD_CATEGORIA then abrirModulos() return false end
+        if dialogId == D_MOD_CATEGORIA then
+            lua_thread.create(function() wait(150) abrirModulos() end)
+            return false
+        end
         if dialogId == D_INPUT_ACAO or dialogId == D_INPUT_PUNICAO or dialogId == D_INPUT_ALVO_TABELA or dialogId == D_CONFIRMAR_TABELA or
            dialogId == D_INPUT_RG_BUSCA or dialogId == D_INPUT_RG_DEL or
            dialogId == D_INPUT_MONITOR or dialogId == D_INPUT_DESMONITOR then
@@ -784,7 +793,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
 
     if dialogId == D_MODULOS then
         local categoria = MODULOS_CATEGORIAS[(tonumber(listboxId) or -1) + 1]
-        if categoria then abrirModulos(categoria[1]) end
+        if categoria then
+            local nomeCategoria = categoria[1]
+            lua_thread.create(function() wait(150) abrirModulos(nomeCategoria) end)
+        end
     elseif dialogId == D_MOD_CATEGORIA then
         local ids = {}
         for _, categoria in ipairs(MODULOS_CATEGORIAS) do
