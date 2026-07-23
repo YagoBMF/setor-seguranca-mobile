@@ -5,7 +5,7 @@ local samp = require 'samp.events'
 local requests = require 'requests'
 local inicfg = require 'inicfg'
 
-local VERSION = '3.7'
+local VERSION = '3.8'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -407,7 +407,7 @@ end
 
 local function desenharPainelTvFlutuante()
     if not painelTvFlutuante or not staffLogada or not moduloAtivo('painel_tv')
-        or cfg.interface.painel_tv_visivel == false or not rgAtual then return end
+        or cfg.interface.painel_tv_visivel == false then return end
     if type(renderDrawBox) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
 
     if not painelTvFonte and type(renderFontCreate) == 'function' then
@@ -460,7 +460,7 @@ local function desenharPainelTvFlutuante()
     renderFontDrawText(painelTvFonteTitulo or painelTvFonte, '{48C6FF}SETOR TV  {A8B5C8}| arraste aqui', x + 11, y + 5, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte, '{A8B5C8}NICK: {FFFFFF}' .. tostring(nickAtual or '?'), x + 11, y + 30, 0xFFFFFFFF)
     renderFontDrawText(painelTvFonte,
-        '{A8B5C8}ID: {FFFFFF}' .. tostring(idAtual) .. '  {A8B5C8}| RG: {FFFFFF}' .. tostring(rgAtual)
+        '{A8B5C8}ID: {FFFFFF}' .. tostring(idAtual) .. '  {A8B5C8}| RG: {FFFFFF}' .. tostring(rgAtual or 'aguardando')
             .. '  {A8B5C8}| LEVEL: {FFFFFF}' .. tostring(levelAtual),
         x + 11, y + 46, 0xFFFFFFFF)
     renderDrawBox(x + 9, y + 76, 58, 25, 0xEE126A91)
@@ -743,7 +743,7 @@ local function registrarComandos()
     end)
     sampRegisterChatCommand('tvpainel', function()
         if not exigirStaff('/tvpainel') then return end
-        if not rgAtual then return chat('{FFFF00}', 'Tele um jogador antes de abrir o Painel TV.') end
+        if not painelTvFlutuante then return chat('{FFFF00}', 'Tele um jogador antes de abrir o Painel TV.') end
         abrirTV()
     end)
     sampRegisterChatCommand('tvhud', function()
@@ -940,6 +940,7 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         local jogador = jogadoresSeletorTV[(tonumber(listboxId) or -1) + 1]
         if jogador then
             local rg = acharRG(jogador.nick)
+            nickAtual, rgAtual, painelTvFlutuante = jogador.nick, rg, true
             sampSendChat('/tv ' .. tostring(rg or jogador.id))
         end
     elseif dialogId == D_MAIN then
@@ -1054,6 +1055,17 @@ function samp.onSendCommand(command)
     if buscaTv and not trim(buscaTv):match('^%d+$') then
         abrirSeletorTV(buscaTv)
         return false
+    end
+    if buscaTv and trim(buscaTv):match('^%d+$') then
+        local numero = tonumber(trim(buscaTv))
+        painelTvFlutuante = true
+        if numero and sampIsPlayerConnected(numero) then
+            nickAtual = sampGetPlayerNickname(numero)
+            rgAtual = acharRG(nickAtual)
+        else
+            rgAtual = trim(buscaTv)
+            nickAtual = cache[rgAtual] and cache[rgAtual].nick or 'Aguardando servidor'
+        end
     end
     if cmdLimpo == '/reports' or cmdLimpo:match('^/reports%s+') then
         reportDialogId, aguardandoReport = -2, false
