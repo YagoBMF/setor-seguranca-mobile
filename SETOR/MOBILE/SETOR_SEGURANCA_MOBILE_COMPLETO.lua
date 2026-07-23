@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.35'
+local VERSION = '3.37'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -1131,7 +1131,8 @@ local function confirmarPunicaoTabela(rg)
         }
         dialogAction = {
             tipo='tabela_' .. tipoTabela, rg=rg,
-            nick=nickAtual, motivo=item[2], tempo=tonumber(item[3]) or 0
+            nick=nickAtual, motivo=item[2], tempo=tonumber(item[3]) or 0,
+            confirmacaoNick=false
         }
         local tempoTexto = (tipoTabela == 'ban_permanente' and 'Permanente')
             or (tipoTabela == 'kick' and 'Imediato')
@@ -1747,7 +1748,25 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             if dialogAction.tipo == 'tabela' then
                 sampSendChat('/punicao ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_ban_permanente' then
-                sampSendChat('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
+                if tostring(dialogAction.motivo):lower() == 'nick improprio' then
+                    if not dialogAction.confirmacaoNick then
+                        dialogAction.confirmacaoNick = true
+                        dialogo(D_CONFIRMAR_TABELA, 'CONFIRMACAO FINAL - NICK IMPROPRIO',
+                            'Jogador: ' .. tostring(dialogAction.nick or '?')
+                                .. '\nRG: ' .. tostring(dialogAction.rg)
+                                .. '\n\nSera aplicado KICK e depois BAN PERMANENTE.',
+                            'CONFIRMAR', 'CANCELAR', 0)
+                        return false
+                    end
+                    local rgNick = tostring(dialogAction.rg)
+                    lua_thread.create(function()
+                        sampSendChat('/kick ' .. rgNick .. ' Nick improprio')
+                        wait(1000)
+                        sampSendChat('/ban ' .. rgNick .. ' Nick improprio')
+                    end)
+                else
+                    sampSendChat('/ban ' .. dialogAction.rg .. ' ' .. dialogAction.motivo)
+                end
             elseif dialogAction.tipo == 'tabela_ban_temporario' then
                 sampSendChat('/bantemp ' .. dialogAction.rg .. ' ' .. dialogAction.tempo .. ' ' .. dialogAction.motivo)
             elseif dialogAction.tipo == 'tabela_mute' then
@@ -1935,19 +1954,24 @@ function samp.onServerMessage(color, text)
         atendimentoOffAte, atendimentoTempoFinal = 0, 0
     end
 
-    -- Identificacao automatica segura, equivalente ao PC: a mensagem precisa
-    -- citar o nick local ou ser a resposta direta a um /la recente.
+    -- Identificacao automatica segura: mensagens globais de login de outros
+    -- staffs nunca podem alterar o cargo desta instalacao.
     local meuNick = ''
     if type(sampGetPlayerIdByCharHandle) == 'function' and type(sampGetPlayerNickname) == 'function' then
         local ok, encontrado, meuId = pcall(sampGetPlayerIdByCharHandle, PLAYER_PED)
         if ok and encontrado then meuNick = tostring(sampGetPlayerNickname(meuId) or '') end
     end
     local agoraLogin = os.clock and os.clock() or 0
-    local mensagemMinha = meuNick ~= '' and baixo:find(meuNick:lower(), 1, true) ~= nil
     local loginPendente = loginStaffPendenteAte > agoraLogin
     local confirmouLogin = baixo:find('logou', 1, true)
         and (baixo:find('staff', 1, true) or baixo:find('administra', 1, true))
-    if confirmouLogin and (mensagemMinha or loginPendente) then
+    local nomeLoginMensagem = ct:match(
+        '[Aa][Dd][Mm][Ii][Nn]:%s*[Oo]%(A%)%s+.-%s+([%w_]+)%[%d+%]%s+logou')
+        or ct:match('[Oo]la%s+.-%s+([%w_]+),%s+voce%s+logou')
+    local loginEhMeu = loginPendente and meuNick ~= ''
+        and nomeLoginMensagem ~= nil
+        and tostring(nomeLoginMensagem):lower() == meuNick:lower()
+    if confirmouLogin and loginEhMeu then
         local cargoLogin
         if baixo:find('diretor', 1, true) then cargoLogin = 'Diretor'
         elseif baixo:find('coorden', 1, true) then cargoLogin = 'Coordenador'
