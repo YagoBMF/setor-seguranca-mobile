@@ -459,7 +459,8 @@ local motivosMute = {
     {"MUCS - Restricao", 3}, {"MUC Atendimento", 3}, {"MUC Duvida", 3},
     {"MUC Missa", 3}, {"MUC News", 3}, {"MUC OLX", 3},
     {"MUC /Reportar", 3}, {"MUC Anorg", 3}, {"MUC An", 3},
-    {"Ofensa Staff/Servidor", 30}, {"Desrespeito", 3}, {"Conteudo sexual", 3}
+    {"Ofensa Staff/Servidor", 30}, {"Desrespeito", 3}, {"Conteudo sexual", 3},
+    {"Flood", 1}
 }
 local motivosBan = {
     {"Cortar animacao", 15}, {"Handling", 5}, {"Animacao vantajosa", 5},
@@ -509,6 +510,7 @@ local function paineltv_main()
 
     -- Ativar/desativar cursor manualmente
     sampRegisterChatCommand("kj", function()
+        if _G.HZExigirStaff and not _G.HZExigirStaff("/kj") then return end
         if _G.HZModuloAtivo and not _G.HZModuloAtivo("painel_tv") then return end
         setCursor(not cursorAtivo)
         sampAddChatMessage("{FFFF00}[Setor] Cursor alternado.", -1)
@@ -516,6 +518,7 @@ local function paineltv_main()
 
     -- Toggle manual do painel (opcional). Cursor sempre OFF ao abrir/fechar.
     sampRegisterChatCommand("tvz", function()
+        if _G.HZExigirStaff and not _G.HZExigirStaff("/tvz") then return end
         if _G.HZModuloAtivo and not _G.HZModuloAtivo("painel_tv") then
             sampAddChatMessage("{FF6B6B}[MODS] Painel TV esta desligado. Use /mods para ativar.", -1)
             return
@@ -1469,6 +1472,15 @@ function _G.HZModuloAtivo(id)
     return _G.HZTemPermissaoModulo(id)
         and type(configSistema.modulos) == "table"
         and configSistema.modulos[id] ~= false
+end
+
+function _G.HZExigirStaff(recurso)
+    if _G.HZStaffLogada == true then return true end
+    sampAddChatMessage(
+        "{FF6B6B}[SETOR] Entre na staff com /la antes de usar " .. tostring(recurso or "esta funcao") .. ".",
+        -1
+    )
+    return false
 end
 
 local ultimoSalvamentoConfig = 0
@@ -2741,13 +2753,14 @@ local lastPlayerX, lastPlayerY, lastPlayerZ = 0, 0, 0
 
 -- ================== SISTEMA AUTOMÁTICO /SACIARME NA STAFF ==================
 local staffWorkActive = false
-local saciarmeInterval = 20 * 60
+local saciarmeInterval = 15 * 60
 local saciarmeNextTime = 0
 
 local function startStaffSaciarme()
     staffWorkActive = true
-    saciarmeNextTime = os.time() + saciarmeInterval
-    sampSendChat("/saciarme")
+    -- Primeiro uso 30 segundos apos confirmar o login; os proximos seguem
+    -- o intervalo normal de 15 minutos.
+    saciarmeNextTime = os.time() + 30
 end
 
 local function stopStaffSaciarme()
@@ -4457,12 +4470,18 @@ _G.HZMonitorPanel = _G.HZMonitorPanel or {
 }
 
 function _G.HZMonitorPanel.abrir()
+    if not _G.HZExigirStaff("/ss") then
+        _G.HZMonitorPanel.aberto.v = false
+        return false
+    end
+    if not _G.HZModuloAtivo("monitoramento") then return false end
     _G.HZMonitorEtapa1.carregar()
     _G.HZMonitorPanel.aberto.v = true
     _G.HZMonitorPanel.x = tonumber(configSistema.monitoradosX) or 780
     _G.HZMonitorPanel.y = tonumber(configSistema.monitoradosY) or 220
     _G.HZMonitorPanel.posCarregada = false
     imgui.Process = true
+    return true
 end
 
 -- Fecha a lista e devolve corretamente o controle do mouse ao jogo.
@@ -4606,7 +4625,12 @@ function _G.HZMonitorPanel.desenhar()
             uiTextColor(UI_HZ.muted, "Motivo: " .. tostring(info.motivo or "Nao informado"))
 
             if idOnline then
-                if imgui.Button("TV##mon_tv_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then sampSendChat("/tv " .. rg) end
+                if imgui.Button("TV##mon_tv_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then
+                    sampSendChat("/tv " .. rg)
+                    -- Ao iniciar a telagem pela lista /ss, fecha a lista para
+                    -- deixar a tela livre para o Painel TV.
+                    _G.HZMonitorPanel.fechar()
+                end
                 imgui.SameLine()
                 if imgui.Button("IR##mon_ir_" .. i, imgui.ImVec2(_G.HZTamanhoMods(85), _G.HZTamanhoMods(28))) then sampSendChat("/ir " .. rg) end
                 imgui.SameLine()
@@ -4819,11 +4843,13 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("setorcomandos", function()
+        if not _G.HZExigirStaff("/setorcomandos") then return end
         _G.HZAbrirSetorComandos()
     end)
 
     -- MUTE (COMANDO DIRETO - SETOR SEGURANÇA)
     sampRegisterChatCommand("mu", function(arg)
+        if not _G.HZExigirStaff("/mu") then return end
         local n, r, d, m = arg:match("^(%S+)%s+(%d+)%s+(%d+)%s+(.+)$")
         if n then
             enviarTudo(n, r, d .. " dias", m, "mutou", WEBHOOKS.MUTE, "MUTE")
@@ -4831,6 +4857,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("hz1", function()
+        if not _G.HZExigirStaff("/hz1") then return end
         if not _G.HZModuloAtivo("navegacao_tv") then
             sampAddChatMessage("{FF6B6B}[MODS] Navegacao TV esta desligada. Use /mods para ativar.", -1)
             return
@@ -4842,6 +4869,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("hz0", function()
+        if not _G.HZExigirStaff("/hz0") then return end
         tvNovatosAtivo, tvTodosAtivo = false, false
         if _G.HZResetarNavegacaoTV then _G.HZResetarNavegacaoTV() end
         salvarConfigSistema(true)
@@ -4849,6 +4877,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("painelpos", function(arg)
+        if not _G.HZExigirStaff("/painelpos") then return end
         local x, y = tostring(arg or ""):match("^(%d+)%s+(%d+)$")
         if x and y then
             configSistema.painelAtendimentoX = tonumber(x)
@@ -4861,6 +4890,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("painelreset", function()
+        if not _G.HZExigirStaff("/painelreset") then return end
         configSistema.painelAtendimentoX = 20
         configSistema.painelAtendimentoY = 630
         configSistema.seletorX = 300
@@ -4884,6 +4914,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("tvhist", function()
+        if not _G.HZExigirStaff("/tvhist") then return end
         sampAddChatMessage("{00CED1}---- HIST NOVATOS (pos="..histIndexN.."/"..#historicoN..") ----", -1)
         local iniN = math.max(1, #historicoN - 15 + 1)
         for i=iniN,#historicoN do
@@ -4907,12 +4938,14 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("rgcache", function()
+        if not _G.HZExigirStaff("/rgcache") then return end
         local total = 0
         for _ in pairs(rgDatabase) do total = total + 1 end
         sampAddChatMessage(string.format("{00FF7F}Cache RG carregado: %d registro(s). Arquivo: %s", total, CACHE_PATH), -1)
     end)
 
     sampRegisterChatCommand("rgdedup", function()
+        if not _G.HZExigirStaff("/rgdedup") then return end
         local mudou = false
 
         for rg, info in pairs(rgDatabase) do
@@ -4928,6 +4961,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("rgdel", function(arg)
+        if not _G.HZExigirStaff("/rgdel") then return end
         local rg = tostring(arg or ""):gsub("%D", "")
 
         if rg ~= "" and rgDatabase[rg] then
@@ -4940,6 +4974,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("rgatual", function()
+        if not _G.HZExigirStaff("/rgatual") then return end
         if rgTeladoAtual then
             local info = rgDatabase[rgTeladoAtual]
             local nick = (type(info) == "table" and info.nick) or nickTeladoAtual or "Desconhecido"
@@ -4950,6 +4985,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("rgnome", function(arg)
+        if not _G.HZExigirStaff("/rgnome") then return end
         local rg, status = buscarRGPorNomeOuRG(arg)
         if rg then
             local info = rgDatabase[rg]
@@ -4962,27 +4998,33 @@ local function setor_main()
 
     -- MONITORAMENTO STAFF - ETAPA 1
     sampRegisterChatCommand("ass", function(arg)
+        if not _G.HZExigirStaff("/ass") then return end
         if _G.HZModuloAtivo("monitoramento") then _G.HZMonitorEtapa1.monitor(arg) end
     end)
     sampRegisterChatCommand("rss", function(arg)
+        if not _G.HZExigirStaff("/rss") then return end
         if _G.HZModuloAtivo("monitoramento") then _G.HZMonitorEtapa1.desmonitor(arg) end
     end)
     sampRegisterChatCommand("ss", function()
-        if _G.HZModuloAtivo("monitoramento") then _G.HZMonitorPanel.abrir() end
+        if not _G.HZExigirStaff("/ss") then return end
+        _G.HZMonitorPanel.abrir()
     end)
 
     -- COMANDOS DA CÂMERA STAFF
     sampRegisterChatCommand("hz", function()
+        if not _G.HZExigirStaff("/hz") then return end
         if not _G.HZModuloAtivo("camera_staff") then return end
         if camOn then camDisable() else camEnable(false) end
     end)
 
     sampRegisterChatCommand("hzstaff", function()
+        if not _G.HZExigirStaff("/hzstaff") then return end
         if not _G.HZModuloAtivo("camera_staff") then return end
         if camOn then camDisable() else camEnable(true) end
     end)
 
     sampRegisterChatCommand("map", function()
+        if not _G.HZExigirStaff("/map") then return end
         if not _G.HZModuloAtivo("camera_staff") then return end
         if camOn and not isStaffMode then
             lua_thread.create(stealthTeleportToCam)
@@ -4990,6 +5032,7 @@ local function setor_main()
     end)
 
     sampRegisterChatCommand("mapp", function()
+        if not _G.HZExigirStaff("/mapp") then return end
         if not _G.HZModuloAtivo("camera_staff") then return end
         if not isStaffMode then
             lua_thread.create(stealthTeleportBack)
@@ -6189,7 +6232,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "1.96",
+    versao = "2.01",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
