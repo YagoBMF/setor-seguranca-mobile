@@ -431,15 +431,15 @@ local tabelaTempos = {
 local motivosCadeia = {
     {"NRA - Uso de arma em safe", 100, "Uso de arma em safe"},
     {"ASM - Agressao sem motivo", 100, "Agressao sem motivo"},
-    {"NS - Sem amor a vida", 200, "Sem amor a vida"},
-    {"DM - Matar sem motivo", 200, "Matar sem motivo"},
-    {"DM - Ferir sem motivo", 200, "Ferir sem motivo"},
+    {"DM - Matar/Ferir sem motivo", 200, "Matar/Ferir sem motivo"},
     {"Assalto loja irregular", 150}, {"Assalto banco irregular", 150},
     {"Anti RP", 200, "Anti RP"},
-    {"Anti-RP - Roubo de caixinha sobre veiculo", 200, "Roubo de caixinha sobre veiculo"},
+    {"Anti-RP - Assalto em veiculo", 200, "Assalto em veiculo"},
     {"Anti-RP - Uso indevido de profissao", 200, "Uso indevido de profissao"},
+    {"Anti-RP - Algemar/taser durante trocacao", 200, "Algemar ou usar taser durante trocacao"},
+    {"Anti-RP - Abuso de safe", 200, "Abuso de safe"},
     {"PTR solo - Policial solo em acao", 250, "Policial solo em acao"},
-    {"VDM - Veiculo usado como arma", 250, "Veiculo usado como arma"},
+    {"VDM - Matar/Ferir com veiculo", 250, "Matar/Ferir com veiculo"},
     {"DB - Atirando de dentro do veiculo", 250, "Atirando de dentro do veiculo"},
     {"AB Desmanche", 250, "Abordagem no Desmanche"},
     {"KOS - Matar por identificacao", 250, "Matar por identificacao"},
@@ -448,11 +448,13 @@ local motivosCadeia = {
     {"HK - Matar com helicoptero", 250, "Matar com helicoptero"},
     {"SLP - Sniper em local proibido", 250, "Sniper em local proibido"},
     {"Invasao sem autorizacao", 250},
-    {"RDM - Multiplas mortes", 250, "Multiplas mortes"},
+    {"RDM - Multiplas mortes sem motivo", 250, "Multiplas mortes sem motivo"},
     {"RK - Vinganca apos morte", 250, "Vinganca apos morte"},
-    {"Spam Kill - Abusando de interior", 250, "Abusando de interior"},
-    {"Correndo safe em AB/Acao", 250},
-    {"CL - Desconectou em acao", 300, "Desconectou em acao"},
+    {"Spam Kill - Abuso de interior para matar", 250, "Abuso de interior para matar"},
+    {"CB - Forcar perseguicao", 250, "Forcar perseguicao"},
+    {"SAAV - Sem Amor a Vida", 250, "Sem Amor a Vida"},
+    {"PK - Ignorar perda de memoria", 250, "Ignorar perda de memoria"},
+    {"CL - Combat Log", 300, "Desconectou durante acao"},
     {"Corrupcao", 300}, {"Dark RP", 300}
 }
 local motivosMute = {
@@ -465,11 +467,11 @@ local motivosMute = {
 local motivosBan = {
     {"Cortar animacao", 15}, {"Handling", 5}, {"Animacao vantajosa", 5},
     {"Anti-RP extremo (10 dias)", 10}, {"Anti-RP extremo (15 dias)", 15},
-    {"Anti-RP extremo (20 dias)", 20}, {"Cheat", 0}, {"Abuso de bug", 0},
+    {"Anti-RP extremo (20 dias)", 20}, {"Cheat", 0}, {"Mod proibido", 0}, {"Abuso de bug", 0},
     {"Comercio ilegal", 0}, {"Divulgacao", 0}, {"Nick improprio", 0},
     {"Money farm", 0}, {"Racismo", 0}, {"Gordofobia", 0}
 }
-local motivosKick = { {"RT / Bugado", 0}, {"Bugando evento", 0} }
+local motivosKick = { {"RT / Jogador bugado", 0}, {"Bugando evento", 0} }
 
 local function normalizarMotivoPainel(valor)
     return tostring(valor or ""):upper():gsub("[^%w%s]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
@@ -6232,7 +6234,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.01",
+    versao = "2.02",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
