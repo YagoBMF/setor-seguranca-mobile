@@ -3820,13 +3820,18 @@ function _G.HZAbrirModsDialog(tela)
     local botao1, botao2 = "ABRIR", "FECHAR"
     if tela == "CATEGORIAS" then
         for _, categoria in ipairs(_G.HZModsCategorias) do
-            local ativos = 0
+            local ativos, permitidos = 0, 0
             for _, moduloId in ipairs(categoria[3]) do
-                if _G.HZModuloAtivo(moduloId) then ativos = ativos + 1 end
+                if _G.HZTemPermissaoModulo(moduloId) then
+                    permitidos = permitidos + 1
+                    if _G.HZModuloAtivo(moduloId) then ativos = ativos + 1 end
+                end
             end
-            linhas[#linhas + 1] = string.format("{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s",
-                categoria[1], ativos, #categoria[3], categoria[2])
-            _G.HZModsDialogItens[#_G.HZModsDialogItens + 1] = categoria
+            if permitidos > 0 then
+                linhas[#linhas + 1] = string.format("{48C6FF}%s {A8B5C8}[%d/%d ativos] - %s",
+                    categoria[1], ativos, permitidos, categoria[2])
+                _G.HZModsDialogItens[#_G.HZModsDialogItens + 1] = categoria
+            end
         end
     else
         botao1, botao2 = "ALTERAR", "VOLTAR"
@@ -3836,11 +3841,10 @@ function _G.HZAbrirModsDialog(tela)
         end
         for _, moduloId in ipairs(idsCategoria or {}) do
             for _, item in ipairs(_G.HZModulosUI) do
-                if item[1] == moduloId then
-                    local permitido, ativo = _G.HZTemPermissaoModulo(moduloId), _G.HZModuloAtivo(moduloId)
+                if item[1] == moduloId and _G.HZTemPermissaoModulo(moduloId) then
+                    local ativo = _G.HZModuloAtivo(moduloId)
                     local estado, cor
-                    if not permitido then estado, cor = "BLOQUEADO", "{FF6B6B}"
-                    elseif ativo then estado, cor = "ATIVO", "{3EDC81}"
+                    if ativo then estado, cor = "ATIVO", "{3EDC81}"
                     else estado, cor = "DESATIVADO", "{FFB347}" end
                     linhas[#linhas + 1] = string.format("{FFFFFF}%s  %s[%s]{A8B5C8} - %s",
                         item[2], cor, estado, item[3])
@@ -4038,11 +4042,11 @@ function _G.HZDesenharPainelModsCompat()
     local visiveis = {}
     for _, item in ipairs(_G.HZModulosUI) do
         local id = item[1]
-        if _G.HZModsPagina == "GERAL"
+        if _G.HZTemPermissaoModulo(id) and (_G.HZModsPagina == "GERAL"
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff")) then
+                (id == "camera_staff" or id == "automacoes_staff"))) then
             visiveis[#visiveis + 1] = item
         end
     end
@@ -4184,11 +4188,11 @@ function _G.HZDesenharPainelMods()
     local itensPagina = {}
     for _, item in ipairs(_G.HZModulosUI) do
         local id = item[1]
-        local mostrar = _G.HZModsPagina == "GERAL"
+        local mostrar = _G.HZTemPermissaoModulo(id) and (_G.HZModsPagina == "GERAL"
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff"))
+                (id == "camera_staff" or id == "automacoes_staff")))
         if mostrar then table.insert(itensPagina, item) end
     end
 
@@ -4371,11 +4375,11 @@ function _G.HZDesenharPainelModsMimgui()
     local visiveis = {}
     for _, item in ipairs(_G.HZModulosUI) do
         local id = item[1]
-        if _G.HZModsPagina == "GERAL"
+        if _G.HZTemPermissaoModulo(id) and (_G.HZModsPagina == "GERAL"
             or (_G.HZModsPagina == "PAINEIS" and
                 (id == "painel_tv" or id == "navegacao_tv" or id == "monitoramento" or id == "atendimento"))
             or (_G.HZModsPagina == "FERRAMENTAS" and
-                (id == "camera_staff" or id == "automacoes_staff")) then
+                (id == "camera_staff" or id == "automacoes_staff"))) then
             visiveis[#visiveis + 1] = item
         end
     end
@@ -6249,7 +6253,7 @@ end
 --   pc/SETOR_SEG.lua
 -- ============================================================
 _G.HZUpdaterPC = _G.HZUpdaterPC or {
-    versao = "2.03",
+    versao = "2.04",
     urlVersao = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/versao.txt",
     urlScript = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_SEG.lua",
     urlBootstrap = "https://raw.githubusercontent.com/YagoBMF/setor-advanced/main/SETOR/PC/SETOR_UPDATER.lua",
