@@ -7,7 +7,7 @@ local inicfg = require 'inicfg'
 local MIMGUI_OK, mimgui = pcall(require, 'mimgui')
 if not MIMGUI_OK or type(mimgui) ~= 'table' then MIMGUI_OK, mimgui = false, nil end
 
-local VERSION = '3.53'
+local VERSION = '3.55'
 local CONFIG_FILE = 'SetorSeguranca.ini'
 local CACHE_FILE = 'hz_rg_cache_mobile.txt'
 local MONITOR_FILE = 'hz_monitorados_mobile.txt'
@@ -174,9 +174,12 @@ local D_INPUT_ALVO_TABELA = 28018
 local D_CONFIRMAR_TABELA = 28019
 local D_SELETOR_TV = 28020
 local D_MOD_CATEGORIA = 28021
+local D_SELETOR_COMANDO = 28023
 local dialogAction = nil
 local punicaoTabelaSelecionada = nil
 local jogadoresSeletorTV = {}
+local jogadoresSeletorComando = {}
+local comandoSeletorPendente = nil
 local modsCategoriaAtual = nil
 
 -- Texto visual pode manter a sigla; o comando envia somente o motivo real.
@@ -718,6 +721,28 @@ local function instalarPainelTvMimgui()
         end
     end
 
+    -- Compensa APKs que ampliam a fonte pelo DPI do Android sem ampliar a
+    -- janela na mesma proporcao. Em aparelhos normais o fator permanece 1.
+    local function fatorDensidadeFonte(escala)
+        if type(mimgui.GetFontSize) ~= 'function' then return 1 end
+        local okFonte, tamanhoFonte = pcall(mimgui.GetFontSize)
+        tamanhoFonte = okFonte and tonumber(tamanhoFonte) or nil
+        local esperado = 16 * (tonumber(escala) or 1)
+        if not tamanhoFonte or esperado <= 0 then return 1 end
+        return math.max(1, math.min(1.45, tamanhoFonte / esperado))
+    end
+
+    local function aplicarTamanhoCompensado(largura, altura, escala)
+        local fator = fatorDensidadeFonte(escala)
+        local w = math.floor(largura * fator + 0.5)
+        local h = math.floor(altura * fator + 0.5)
+        if type(mimgui.SetWindowSize) == 'function' then
+            pcall(mimgui.SetWindowSize, mimgui.ImVec2(w, h),
+                mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
+        end
+        return w, h
+    end
+
     local function textoResponsivo(texto)
         if type(mimgui.TextWrapped) == 'function' then
             mimgui.TextWrapped(tostring(texto))
@@ -755,7 +780,7 @@ local function instalarPainelTvMimgui()
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
                 end
-                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(345, 190,
+                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(345, 225,
                     tonumber(cfg.interface.painel_tv_x) or 18,
                     tonumber(cfg.interface.painel_tv_y) or 250,
                     not painelTvMimguiPosCarregada,
@@ -765,16 +790,12 @@ local function instalarPainelTvMimgui()
                 end
 
                 mimgui.Begin('SETOR TV##setor_mobile_tv_' .. tostring(math.floor(escala * 100)), nil, flags)
-                if type(mimgui.SetWindowSize) == 'function' then
-                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
-                end
                 escalarFonteJanela(escala)
+                aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 local idAtual, levelAtual = dadosJogadorAtual()
                 textoResponsivo('NICK: ' .. tostring(nickAtual or 'Aguardando servidor'))
-                textoResponsivo('ID: ' .. tostring(idAtual)
-                    .. '  |  RG: ' .. tostring(rgAtual or 'aguardando')
-                    .. '  |  LEVEL: ' .. tostring(levelAtual))
+                textoResponsivo('ID: ' .. tostring(idAtual) .. '  |  LEVEL: ' .. tostring(levelAtual))
+                textoResponsivo('RG: ' .. tostring(rgAtual or 'aguardando'))
                 local monitorInfo = rgAtual and monitorados[tostring(rgAtual)] or nil
                 textoResponsivo(monitorInfo and ('MONITORADO: ' .. tostring(monitorInfo.motivo))
                     or 'MONITORAMENTO: nao monitorado')
@@ -782,7 +803,7 @@ local function instalarPainelTvMimgui()
 
                 local disponivel = larguraInterna(330 * escala)
                 local gap = 4 * escala
-                if disponivel >= 280 * escala then
+                if disponivel >= 300 * escala then
                     local bw = (disponivel - gap * 3) / 4
                     if mimgui.Button('MENU', mimgui.ImVec2(bw, 34 * escala)) then painelTvAcaoPendente = 'menu' end
                     mimgui.SameLine(0, gap)
@@ -796,6 +817,7 @@ local function instalarPainelTvMimgui()
                     if mimgui.Button('MENU', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'menu' end
                     mimgui.SameLine(0, gap)
                     if mimgui.Button('PUNIR', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'punir' end
+                    if type(mimgui.Spacing) == 'function' then mimgui.Spacing() end
                     if mimgui.Button('ACOES', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'acoes' end
                     mimgui.SameLine(0, gap)
                     if mimgui.Button('TV OFF', mimgui.ImVec2(bw, 32 * escala)) then painelTvAcaoPendente = 'off' end
@@ -832,7 +854,7 @@ local function instalarPainelTvMimgui()
                         + (mimgui.WindowFlags.NoResize or 0)
                         + (mimgui.WindowFlags.NoScrollbar or 0)
                 end
-                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(265, 92,
+                local escala, posIgnoradaX, posIgnoradaY, janelaW, janelaH = prepararJanelaResponsiva(285, 118,
                     tonumber(cfg.interface.atendimento_x) or 18,
                     tonumber(cfg.interface.atendimento_y) or 170,
                     not atendimentoPosCarregada,
@@ -843,13 +865,10 @@ local function instalarPainelTvMimgui()
 
                 mimgui.Begin('ATENDIMENTO RAPIDO##setor_mobile_atendimento_'
                     .. tostring(math.floor(escala * 100)), nil, flags)
-                if type(mimgui.SetWindowSize) == 'function' then
-                    pcall(mimgui.SetWindowSize, mimgui.ImVec2(janelaW, janelaH),
-                        mimgui.Cond and (mimgui.Cond.Always or 0) or 0)
-                end
                 escalarFonteJanela(escala)
+                aplicarTamanhoCompensado(janelaW, janelaH, escala)
                 local nivel = nivelCargo(cfg.dados.cargo)
-                local disponivel = larguraInterna(235 * escala)
+                local disponivel = larguraInterna(255 * escala)
                 if nivel >= 2 then
                     local gap, bw = 4 * escala, (disponivel - 4 * escala) / 2
                     if bw >= 88 * escala then
@@ -1053,6 +1072,76 @@ local function dialogoMods(id, titulo, texto, botao1, botao2)
     if type(sampSetDialogClientside) == 'function' then
         sampSetDialogClientside(false)
     end
+end
+
+local COMANDOS_COM_SELETOR = {
+    ir = true, trazer = true, tapa = true, reviver = true,
+    congelar = true, descongelar = true, prenderarmas = true,
+    checar = true, setvida = true, setcolete = true
+}
+
+local function rgCachePorNickExato(nick)
+    local procurado = tostring(nick or ''):lower()
+    for rg, info in pairs(cache) do
+        if tostring(info.nick or ''):lower() == procurado then
+            return tostring(rg)
+        end
+    end
+    return nil
+end
+
+local function executarComandoSelecionado(item)
+    local pendenteSeletor = comandoSeletorPendente
+    comandoSeletorPendente, jogadoresSeletorComando = nil, {}
+    if not pendenteSeletor or not item or not item.rg then return end
+    if not sampIsPlayerConnected(tonumber(item.id)) then
+        return chat('{FF5555}', 'O jogador selecionado desconectou.')
+    end
+    lua_thread.create(function()
+        wait(100)
+        sampSendChat('/' .. pendenteSeletor.comando .. ' ' .. tostring(item.rg)
+            .. tostring(pendenteSeletor.restante or ''))
+    end)
+end
+
+local function abrirSeletorComando(comando, busca, restante)
+    busca = trim(busca):lower()
+    jogadoresSeletorComando = {}
+    for _, jogador in ipairs(listaJogadores(false)) do
+        local nick = tostring(jogador.nick or '')
+        if nick:lower():find(busca, 1, true) then
+            local rg = rgCachePorNickExato(nick)
+            if rg then
+                jogadoresSeletorComando[#jogadoresSeletorComando + 1] = {
+                    id = jogador.id, nick = nick, rg = rg, level = jogador.level
+                }
+            end
+        end
+    end
+
+    if #jogadoresSeletorComando == 0 then
+        chat('{FF5555}', 'Nenhum jogador online com RG confirmado foi encontrado para "' .. busca .. '".')
+        chat('{FFFF00}', 'Tele o jogador uma vez para registrar o RG e tente novamente.')
+        return false
+    end
+
+    comandoSeletorPendente = {
+        comando = tostring(comando):lower(),
+        restante = tostring(restante or '')
+    }
+    if #jogadoresSeletorComando == 1 then
+        executarComandoSelecionado(jogadoresSeletorComando[1])
+        return true
+    end
+
+    local linhas = {}
+    for _, item in ipairs(jogadoresSeletorComando) do
+        linhas[#linhas + 1] = string.format('%s | ID %s | RG %s | Level %s',
+            item.nick, tostring(item.id), item.rg, tostring(item.level or '?'))
+    end
+    dialogo(D_SELETOR_COMANDO, 'SELECIONAR JOGADOR - /' .. tostring(comando):upper(),
+        table.concat(linhas, '\n'), 'Executar', 'Cancelar', 2)
+    return true
 end
 
 local function abrirSeletorTV(busca)
@@ -1752,7 +1841,7 @@ _G.HZMobileProcessarRespostaReport = processarRespostaReport
 function samp.onSendDialogResponse(dialogId, button, listboxId, input)
     if _G.HZMobileProcessarRespostaReport(dialogId, button, listboxId, input) then return end
     -- Retorna false para impedir que respostas dos nossos dialogos locais sejam enviadas ao servidor.
-    if dialogId < D_MAIN or dialogId > 28022 then return end
+    if dialogId < D_MAIN or dialogId > D_SELETOR_COMANDO then return end
     if not staffLogada then
         sampAddChatMessage('{FF6B6B}[SETOR] Sessao da staff encerrada. Use /la para acessar as ferramentas.', -1)
         return false
@@ -1765,6 +1854,10 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
             return false
         end
         if dialogId == D_SELETOR_TV then return false end
+        if dialogId == D_SELETOR_COMANDO then
+            comandoSeletorPendente, jogadoresSeletorComando = nil, {}
+            return false
+        end
         if dialogId == D_MODULOS then return false end
         if dialogId == D_TABELA_PUNICAO then
             lua_thread.create(function() wait(150) abrirPunicoes() end)
@@ -1826,6 +1919,9 @@ function samp.onSendDialogResponse(dialogId, button, listboxId, input)
         if jogador then
             _G.HZMobileTelarPelaTab(jogador)
         end
+    elseif dialogId == D_SELETOR_COMANDO then
+        local jogador = jogadoresSeletorComando[(tonumber(listboxId) or -1) + 1]
+        if jogador then executarComandoSelecionado(jogador) end
     elseif dialogId == D_MAIN then
         local itemMenu = (_G.HZMobileMenuPrincipalItens or {})[(tonumber(listboxId) or -1) + 1]
         if itemMenu == 'punicoes' then abrirPunicoes()
@@ -2000,6 +2096,18 @@ function samp.onSendCommand(command)
     -- Fora da staff, o mod nao intercepta, registra ou automatiza comandos do servidor.
     -- /la continua passando normalmente para que o servidor confirme o login.
     if not staffLogada then return end
+
+    -- Converte nomes abreviados em RG confirmado. Se houver mais de um
+    -- resultado, abre uma tabela com Nome, ID, RG e Level para escolha.
+    local nomeComando, alvoNome, restante =
+        trim(command):match('^/(%S+)%s+(%S+)(.*)$')
+    nomeComando = nomeComando and nomeComando:lower() or nil
+    if nomeComando and COMANDOS_COM_SELETOR[nomeComando]
+        and alvoNome and not alvoNome:match('^%d+$') then
+        abrirSeletorComando(nomeComando, alvoNome, restante)
+        return false
+    end
+
     if cmdLimpo == '/tv' or cmdLimpo:match('^/tv%s+') then
         aguardandoReport, reportDialogId, reportAte = false, -1, 0
         reportAlvoNick, reportAlvoRg, reportSelecaoEm = nil, nil, 0
